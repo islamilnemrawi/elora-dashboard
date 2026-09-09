@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elora Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+:root{--pink:#d81b86;--pink2:#b81470;--soft:#fff0f7;--bg:#f8f7fa;--text:#241b25;--muted:#817782;--white:#fff;--line:#eee6ed;--green:#20a66a;--orange:#ef9b35;--red:#e05252}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Cairo,Arial;color:var(--text)}
+button,input,select,textarea{font:inherit}button{cursor:pointer}
+.layout{display:flex;min-height:100vh}.sidebar{width:260px;background:#fff;border-left:1px solid var(--line);padding:22px 16px;position:fixed;right:0;top:0;bottom:0;z-index:10}
+.logo{font-size:27px;font-weight:800;color:var(--pink);text-align:center;margin:8px 0 28px}.logo small{display:block;color:var(--muted);font-size:11px;font-weight:500}
+.nav button{width:100%;border:0;background:transparent;text-align:right;padding:13px 15px;border-radius:13px;color:#625963;margin:3px 0;display:flex;gap:12px;align-items:center}.nav button i{width:20px;text-align:center}.nav button.active,.nav button:hover{background:var(--soft);color:var(--pink);font-weight:700}
+.main{width:calc(100% - 260px);margin-right:260px;padding:25px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.top h1{margin:0;font-size:25px}.top p{margin:4px 0 0;color:var(--muted);font-size:13px}.admin{background:#fff;border:1px solid var(--line);padding:8px 13px;border-radius:30px;display:flex;align-items:center;gap:8px;font-size:13px}.avatar{width:32px;height:32px;border-radius:50%;background:var(--soft);display:grid;place-items:center;color:var(--pink)}
+.section{display:none}.section.active{display:block}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:15px}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 4px 20px #4a174008}.metric{display:flex;justify-content:space-between;align-items:center}.metric .ico{width:45px;height:45px;border-radius:14px;background:var(--soft);color:var(--pink);display:grid;place-items:center}.metric b{font-size:24px}.metric span{font-size:12px;color:var(--muted)}.trend{font-size:11px;color:var(--green);margin-top:8px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:18px;margin-top:18px;overflow:hidden}.panel-head{padding:17px 19px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.panel-head h3{margin:0;font-size:16px}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:0;border-radius:11px;padding:9px 14px}.primary{background:var(--pink);color:#fff}.light{background:var(--soft);color:var(--pink)}.danger{background:#fff0f0;color:var(--red)}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:13px 15px;text-align:right;border-bottom:1px solid #f1edf1;font-size:13px}th{color:var(--muted);font-weight:700;background:#fcfbfc}.status{padding:5px 9px;border-radius:20px;font-size:11px}.pending{background:#fff4df;color:#bd7715}.done{background:#eaf9f1;color:#168053}.cancel{background:#ffeded;color:#b43d3d}
+.toolbar{display:flex;gap:10px;padding:15px;border-bottom:1px solid var(--line);flex-wrap:wrap}.toolbar input,.toolbar select,.form input,.form select,.form textarea{border:1px solid #e4dce4;border-radius:10px;padding:10px 12px;background:#fff;outline:none}.toolbar input:focus,.form input:focus,.form select:focus,.form textarea:focus{border-color:var(--pink)}.search{flex:1;min-width:200px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.form{padding:18px;display:grid;gap:12px}.form label{font-size:12px;color:#6d626c}.form textarea{min-height:90px;resize:vertical}
+.empty{padding:40px;text-align:center;color:var(--muted)}.mobile-menu{display:none}
+@media(max-width:900px){.sidebar{width:220px}.main{width:calc(100% - 220px);margin-right:220px;padding:18px}.cards{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:650px){.sidebar{display:none}.main{width:100%;margin:0;padding:14px}.mobile-menu{display:block;border:0;background:#fff;border-radius:10px;padding:9px 12px}.top{gap:10px}.cards{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.top h1{font-size:20px}}
+.permissions-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.permission-item{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fcfbfc;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px}.permission-item input{width:auto!important}.perm-group{grid-column:1/-1;font-weight:800;color:var(--pink);padding:6px 2px}.staff-pill{display:inline-flex;gap:5px;align-items:center;background:var(--soft);color:var(--pink);border-radius:999px;padding:4px 8px;font-size:10px;margin:2px}.locked{opacity:.45;pointer-events:none}@media(max-width:650px){.permissions-grid{grid-template-columns:1fr}}
+
+<style id="elora-product-options-dashboard">
+.option-builder{margin-top:14px;padding:15px;border:1px solid rgba(190,120,170,.22);border-radius:18px;background:linear-gradient(135deg,#fff8fc,#faf5ff)}
+.option-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.option-head h4{margin:0;color:#7d3f72}.option-head span{font-size:11px;color:#7b7180;flex:1}.color-row{display:grid;grid-template-columns:58px 1fr 1fr auto;gap:8px;align-items:center;margin:8px 0}.color-row input{width:100%;box-sizing:border-box}.color-row input[type=color]{height:42px;padding:4px;border-radius:12px}.color-preview{width:42px;height:42px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #ddd}
+@media(max-width:700px){.color-row{grid-template-columns:52px 1fr auto}.color-row .color-hex{grid-column:2}.color-row .remove-color{grid-column:3;grid-row:1/3}}
+</style></style>
+
+
+<style id="elora-bulk-import">
+.bulk-box{padding:18px}.bulk-help{background:var(--soft);border:1px solid #f2d8e7;border-radius:14px;padding:13px 15px;font-size:12px;line-height:1.9;color:#665965}.bulk-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.bulk-grid label{font-size:12px;color:#6d626c;display:grid;gap:7px}.bulk-grid input{border:1px dashed #d9bfd0;border-radius:12px;padding:12px;background:#fff}.bulk-preview{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fcfbfc;font-size:12px;color:var(--muted);max-height:180px;overflow:auto}.bulk-progress{display:flex;align-items:center;gap:12px;margin-top:14px}.progress-track{height:10px;background:#eee5ec;border-radius:99px;overflow:hidden;flex:1}.progress-track div{height:100%;width:0;background:var(--pink);transition:width .2s}.bulk-result{margin-top:12px;font-size:12px;line-height:1.8}.bulk-result.ok{color:var(--green)}.bulk-result.err{color:var(--red)}@media(max-width:650px){.bulk-grid{grid-template-columns:1fr}}
+</style>
+<style id="elora-dashboard-auth">
+#dashboardAuth{position:fixed;inset:0;background:rgba(248,247,250,.98);display:grid;place-items:center;z-index:9999;padding:20px}
+#dashboardAuth[hidden]{display:none}
+.auth-card{width:min(420px,100%);background:#fff;border:1px solid var(--line);border-radius:24px;padding:26px;box-shadow:0 20px 70px rgba(60,20,50,.12);text-align:center}
+.auth-card h2{margin:0 0 6px;color:var(--pink)}.auth-card p{margin:0 0 18px;color:var(--muted);font-size:12px}.auth-card input{width:100%;border:1px solid #e4dce4;border-radius:12px;padding:11px 12px;margin:6px 0;outline:none}.auth-card button{width:100%;margin-top:8px}.auth-error{min-height:20px;color:var(--red);font-size:12px;margin-top:8px}
+</style>
+
+<style id="elora-v2-editor">
+.editor-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:16px;padding:16px}.visual-preview-wrap{background:#f5f2f5;border:1px solid var(--line);border-radius:16px;padding:10px;min-width:0}.preview-toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.visual-preview-wrap iframe{display:block;width:100%;height:760px;border:1px solid #ddd;border-radius:13px;background:#fff}.visual-preview-wrap.mobile iframe{width:390px;max-width:100%;margin:auto}.editor-controls{display:grid;gap:12px;align-content:start}.control-card{background:#fff;border:1px solid var(--line);border-radius:15px;padding:14px;box-shadow:0 4px 18px #4a174008}.control-card h4{margin:0 0 12px}.control-card label{display:grid;gap:6px;font-size:11px;color:var(--muted);margin:9px 0}.control-card input,.control-card textarea{width:100%;border:1px solid #e4dce4;border-radius:9px;padding:9px}.control-card input[type=color]{height:42px;padding:3px}.editor-shell{overflow:hidden}@media(max-width:900px){.editor-grid{grid-template-columns:1fr}.visual-preview-wrap iframe{height:600px}}
+</style>
+</head>
+<body>
+<div id="dashboardAuth">
+  <div class="auth-card">
+    <div class="logo">ELORA<small>لوحة تحكم المتجر</small></div>
+    <h2>تسجيل دخول لوحة التحكم</h2>
+    <p>الدخول للمدير/الموظف المصرح له فقط.</p>
+    <input id="dashEmail" type="email" placeholder="البريد الإلكتروني" autocomplete="email">
+    <input id="dashPassword" type="password" placeholder="كلمة المرور" autocomplete="current-password">
+    <button class="btn primary" onclick="dashboardLogin()">دخول</button>
+    <div id="dashAuthError" class="auth-error"></div>
+  </div>
+</div>
+<div class="layout">
+<aside class="sidebar" id="sidebar">
+  <div class="logo">ELORA<small>لوحة تحكم المتجر</small></div>
+  <nav class="nav">
+    <button class="active" data-section="home"><i class="fa-solid fa-chart-pie"></i> الرئيسية</button>
+    <button data-permission="orders.view" data-section="orders"><i class="fa-solid fa-box"></i> الطلبات</button>
+    <button data-permission="products.view" data-section="products"><i class="fa-solid fa-bag-shopping"></i> المنتجات</button>
+    <button data-permission="products.import" data-section="product-tools"><i class="fa-solid fa-file-excel"></i> استيراد Excel</button>
+    <button data-permission="categories.view" data-section="categories"><i class="fa-solid fa-layer-group"></i> الأقسام</button>
+    <button data-permission="offers.view" data-section="offers"><i class="fa-solid fa-tags"></i> العروض والبنرات</button>
+    <button data-permission="coupons.view" data-section="coupons"><i class="fa-solid fa-ticket"></i> أكواد الخصم</button>
+    <button data-permission="customers.view" data-section="customers"><i class="fa-solid fa-users"></i> العملاء</button>
+    <button data-permission="prime.view" data-section="prime"><i class="fa-solid fa-crown"></i> Elora Prime</button>
+    <button data-permission="shipping.view" data-section="shipping"><i class="fa-solid fa-truck"></i> الشحن</button>
+    <button data-permission="payments.view" data-section="payments"><i class="fa-solid fa-credit-card"></i> الدفع</button>
+    <button data-permission="staff.manage" data-section="staff"><i class="fa-solid fa-user-shield"></i> الموظفون والصلاحيات</button>
+    <button data-permission="settings.manage" data-section="settings"><i class="fa-solid fa-gear"></i> الإعدادات</button>
+    <button data-permission="site.edit" data-section="site-editor"><i class="fa-solid fa-wand-magic-sparkles"></i> تعديل الموقع</button>
+  </nav>
+</aside>
+
+<main class="main">
+<header class="top">
+  <div style="display:flex;align-items:center;gap:10px">
+    <button class="mobile-menu" onclick="document.getElementById('sidebar').style.display='block'"><i class="fa-solid fa-bars"></i></button>
+    <div><h1 id="pageTitle">الرئيسية</h1><p>إدارة Elora من مكان واحد</p></div>
+  </div>
+  <div class="admin"><span class="avatar"><i class="fa-solid fa-user"></i></span><span id="adminEmail">مدير المتجر</span></div>
+</header>
+
+<section class="section active" id="home">
+  <div class="cards">
+    <div class="card metric"><div><span>إجمالي المبيعات</span><br><b id="sales">0 ج.م</b><div class="trend">هذا الشهر</div></div><div class="ico"><i class="fa-solid fa-sack-dollar"></i></div></div>
+    <div class="card metric"><div><span>الطلبات</span><br><b id="ordersCount">0</b><div class="trend">آخر البيانات</div></div><div class="ico"><i class="fa-solid fa-receipt"></i></div></div>
+    <div class="card metric" data-permission="reports.profit"><div><span>الأرباح</span><br><b id="profit">0 ج.م</b><div class="trend">بعد تكلفة الجملة</div></div><div class="ico"><i class="fa-solid fa-chart-line"></i></div></div>
+    <div class="card metric"><div><span>العملاء</span><br><b id="customersCount">0</b><div class="trend">المسجلون</div></div><div class="ico"><i class="fa-solid fa-users"></i></div></div>
+  </div>
+  <div class="panel"><div class="panel-head"><h3>آخر الطلبات</h3><button class="btn light" onclick="showSection('orders')">عرض الكل</button></div><div class="table-wrap"><table><thead><tr><th>رقم الطلب</th><th>العميل</th><th>الإجمالي</th><th>الدفع</th><th>الحالة</th></tr></thead><tbody id="recentOrders"><tr><td colspan="5" class="empty">جاري تحميل البيانات...</td></tr></tbody></table></div></div>
+</section>
+
+<section class="section" id="orders"><div class="panel"><div class="panel-head"><h3>إدارة الطلبات</h3></div><div class="toolbar"><input class="search" id="orderSearch" placeholder="ابحث برقم الطلب أو اسم العميل..." oninput="renderOrders()"><select id="orderStatus" onchange="renderOrders()"><option value="">كل الحالات</option><option>جديد</option><option>قيد التجهيز</option><option>تم الشحن</option><option>تم التسليم</option><option>ملغي</option></select></div><div class="table-wrap"><table><thead><tr><th>الطلب</th><th>العميل</th><th>الهاتف</th><th>الإجمالي</th><th>التاريخ</th><th>الحالة</th><th></th></tr></thead><tbody id="ordersTable"><tr><td colspan="7" class="empty">جاري التحميل...</td></tr></tbody></table></div></div></section>
+
+<section class="section" id="products">
+  <div class="panel">
+    <div class="panel-head"><h3>المنتجات</h3><div class="actions"><button class="btn primary" data-permission="products.add" onclick="openProductEditor()"><i class="fa-solid fa-plus"></i> إضافة منتج</button><button class="btn primary" onclick="openBulkImport()"><i class="fa-solid fa-file-import"></i> استيراد Excel / CSV</button><button class="btn light" onclick="downloadProductTemplate()"><i class="fa-solid fa-file-excel"></i> نموذج Excel</button></div></div>
+    <div class="toolbar"><input class="search" id="productSearch" placeholder="بحث بالكود أو اسم المنتج..." oninput="renderProducts()"><select id="productCategoryFilter" onchange="renderProducts()"><option value="">كل الأقسام</option></select></div>
+    <div class="table-wrap"><table><thead><tr><th>الصورة</th><th>المنتج</th><th>القسم</th><th>سعر البيع</th><th>سعر الجملة</th><th>الكود</th><th>المخزون</th></tr></thead><tbody id="productsTable"><tr><td colspan="7" class="empty">جاري تحميل المنتجات...</td></tr></tbody></table></div>
+  </div>
+  <div class="panel" id="productEditor" hidden>
+    <div class="panel-head"><h3 id="productEditorTitle">إضافة منتج</h3><button class="btn light" onclick="closeProductEditor()">إغلاق</button></div>
+    <div class="form grid2">
+      <label>كود المنتج<input id="peCode" placeholder="مثال: EL001"></label>
+      <label>اسم المنتج<input id="peName" placeholder="اسم المنتج"></label>
+      <label>القسم<input id="peCategory" placeholder="إكسسوارات"></label>
+      <label>سعر البيع<input id="pePrice" type="number" min="0" step="0.01"></label>
+      <label>السعر القديم<input id="peOldPrice" type="number" min="0" step="0.01"></label>
+      <label>سعر الجملة<input id="peWholesale" type="number" min="0" step="0.01"></label>
+      <label>المخزون<input id="peStock" type="number" min="0" step="1" value="0"></label>
+      <label>رابط الصورة<input id="peImage" placeholder="https://..."></label>
+    </div>
+    <label style="display:block;margin-top:12px">الوصف<textarea id="peDescription" rows="3" placeholder="وصف المنتج"></textarea></label>
+    <div class="option-builder">
+      <div class="option-head"><h4>🎨 ألوان المنتج</h4><span>اختاري أي درجة لون، ويمكن كتابة اسمها اختياريًا.</span><button class="btn light" type="button" onclick="addColorRow()">+ إضافة لون</button></div>
+      <div id="colorRows"></div>
+    </div>
+    <div class="option-builder">
+      <div class="option-head"><h4>📏 المقاسات</h4><span>اكتبي أي مقاس: Oversize، Free Size، S، M، 36، 38... كل مقاس في سطر أو افصلي بفاصلة.</span></div>
+      <textarea id="peSizes" rows="3" placeholder="Oversize\nFree Size\nS\nM\nL"></textarea>
+    </div>
+    <div class="option-builder">
+      <div class="option-head"><h4>🔗 المتغيرات والمخزون</h4><span>اختياري. مثال: لون + مقاس + مخزون + سعر خاص. لو تركتيه فارغًا سيستخدم النظام الألوان والمقاسات العامة.</span></div>
+      <textarea id="peVariants" rows="4" placeholder='مثال JSON: [{"color_name":"أسود","color_hex":"#000000","size":"Oversize","stock":5}]'></textarea>
+    </div>
+    <div class="actions"><button class="btn primary" data-permission="products.add" id="saveProductBtn" onclick="saveProductEditor()">حفظ المنتج</button><button class="btn light" onclick="closeProductEditor()">إلغاء</button></div>
+    <div id="productEditorResult" class="bulk-result"></div>
+  </div>
+  <div class="panel" id="bulkImportPanel" hidden>
+    <div class="panel-head"><h3>استيراد منتجات بالجملة</h3><button class="btn light" onclick="closeBulkImport()">إغلاق</button></div>
+    <div class="bulk-box">
+      <div class="bulk-help"><b>الطريقة الأسرع:</b> ارفعي ملف Excel/CSV، واختاري صور المنتجات دفعة واحدة. النظام يطابق الصورة مع <b>الكود</b> أو اسم الملف، ثم يرفع البيانات على Supabase والصور على Cloudflare R2 إذا تم إعداد رابط الرفع.</div>
+      <div class="bulk-grid">
+        <label>ملف المنتجات (.xlsx / .xls / .csv)<input id="bulkProductsFile" type="file" accept=".xlsx,.xls,.csv" onchange="previewBulkImport()"></label>
+        <label>صور المنتجات (اختياري)<input id="bulkImagesFiles" type="file" accept="image/*" multiple onchange="previewBulkImages()"></label>
+      </div>
+      <div id="bulkPreview" class="bulk-preview">لم يتم اختيار ملف بعد.</div>
+      <div class="actions"><button class="btn primary" id="bulkImportBtn" onclick="runBulkImport()" disabled><i class="fa-solid fa-cloud-arrow-up"></i> بدء الاستيراد</button><button class="btn light" onclick="downloadProductTemplate()">تحميل نموذج Excel</button></div>
+      <div id="bulkProgress" class="bulk-progress" hidden><div class="progress-track"><div id="bulkProgressBar"></div></div><div id="bulkProgressText">0%</div></div>
+      <div id="bulkResult" class="bulk-result"></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="categories"><div class="panel"><div class="panel-head"><h3>الأقسام</h3><button class="btn primary">+ إضافة قسم</button></div><div class="empty">الأقسام ستُدار من هنا وتظهر مباشرة في المتجر.</div></div></section>
+<section class="section" id="offers"><div class="grid2"><div class="panel"><div class="panel-head"><h3>العروض</h3><button class="btn primary">+ عرض جديد</button></div><div class="empty">إدارة الخصومات والعروض.</div></div><div class="panel"><div class="panel-head"><h3>البنرات</h3><button class="btn primary">+ بنر جديد</button></div><div class="empty">إدارة صور ورسائل الـHero.</div></div></div></section>
+
+<section class="section" id="product-tools">
+  <div class="panel"><div class="panel-head"><h3>استيراد المنتجات والخيارات</h3><div class="actions"><button class="btn light" onclick="downloadArabicTemplate()">تحميل نموذج Excel عربي</button><button class="btn primary" onclick="showSection('products')">العودة للمنتجات</button></div></div>
+  <div class="bulk-box">
+    <div class="bulk-help"><b>استيراد ضخم بدون إدخال يدوي:</b> ارفع ملف Excel/CSV، ويمكنك ترك أي خانة اختيارية فارغة. الألوان والمقاسات يمكن أن تكون متعددة مفصولة بفاصلة، أو تتركها فارغة تمامًا. يمكنك أيضًا رفع صور كثيرة ومطابقتها بكود المنتج.</div>
+    <div class="bulk-grid">
+      <label>ملف المنتجات Excel / CSV<input id="bulkProductsFile" type="file" accept=".xlsx,.xls,.csv" onchange="previewBulkImport()"></label>
+      <label>صور المنتجات — اختياري<input id="bulkImagesFiles" type="file" accept="image/*" multiple onchange="previewBulkImages()"></label>
+    </div>
+    <div class="bulk-preview" id="bulkPreview">لم يتم اختيار ملف بعد.</div>
+    <div class="bulk-progress" id="bulkProgress" hidden><div class="progress-track"><div id="bulkProgressBar"></div></div><span id="bulkProgressText">0%</span></div>
+    <div class="actions" style="margin-top:12px"><button class="btn primary" id="bulkImportBtn" disabled onclick="runBulkImportV2()">بدء الاستيراد</button></div>
+    <div class="bulk-result" id="bulkResult"></div>
+  </div></div>
+  <div class="panel"><div class="panel-head"><h3>قواعد البيانات الاختيارية للمنتج</h3></div><div class="bulk-box"><p style="margin-top:0;color:var(--muted);font-size:12px;line-height:1.9">المنتج لا يحتاج ألوانًا أو مقاسات إلا إذا كان يحتاجها. يمكن أن يكون له ألوان فقط، مقاسات فقط، أو الاثنين معًا. وعند وجود الاثنين يمكن تسجيل مخزون مستقل لكل تركيبة.</p><div class="actions"><span class="status done">الألوان اختيارية</span><span class="status done">المقاسات اختيارية</span><span class="status done">الحقول الإضافية اختيارية</span></div></div></div>
+</section>
+<section class="section" id="coupons">
+  <div class="panel">
+    <div class="panel-head"><h3>أكواد الخصم</h3><button class="btn primary" onclick="openCouponForm()"><i class="fa-solid fa-plus"></i> كود جديد</button></div>
+    <div class="toolbar"><input class="search" id="couponSearch" placeholder="ابحث بالكود..." oninput="renderCoupons()"><select id="couponStatusFilter" onchange="renderCoupons()"><option value="">كل الأكواد</option><option value="active">مفعّل</option><option value="inactive">متوقف</option></select></div>
+    <div class="table-wrap"><table><thead><tr><th>الكود</th><th>الخصم</th><th>الحد الأدنى</th><th>أقصى خصم</th><th>الاستخدام</th><th>من</th><th>إلى</th><th>الحالة</th><th></th></tr></thead><tbody id="couponsTable"><tr><td colspan="10" class="empty">جاري تحميل الأكواد...</td></tr></tbody></table></div>
+  </div>
+  <div class="panel" id="couponEditor" hidden>
+    <div class="panel-head"><h3 id="couponEditorTitle">إضافة كود خصم</h3><button class="btn light" onclick="closeCouponForm()">إغلاق</button></div>
+    <div class="form grid2">
+      <label>كود الخصم<input id="couponCodeAdmin" placeholder="مثال: ELORA10" maxlength="40"></label>
+      <label>نوع الخصم<select id="couponTypeAdmin"><option value="percent">نسبة مئوية %</option><option value="fixed">مبلغ ثابت</option></select></label>
+      <label>قيمة الخصم<input id="couponValueAdmin" type="number" min="0" step="0.01" placeholder="10"></label>
+      <label class="coupon-check" style="display:flex;align-items:center;gap:8px;cursor:pointer"><input id="couponFreeShippingAdmin" type="checkbox" style="width:18px;height:18px"> شحن مجاني مع الكود</label>
+      <label>الحد الأدنى للطلب<input id="couponMinAdmin" type="number" min="0" step="0.01" value="0"></label>
+      <label>أقصى قيمة للخصم<input id="couponMaxAdmin" type="number" min="0" step="0.01" placeholder="اختياري"></label>
+      <label>حد الاستخدام<input id="couponLimitAdmin" type="number" min="0" step="1" placeholder="0 = بدون حد"></label>
+      <label>يبدأ من<input id="couponStartAdmin" type="datetime-local"></label>
+      <label>ينتهي في<input id="couponEndAdmin" type="datetime-local"></label>
+      <label>الحالة<select id="couponActiveAdmin"><option value="true">مفعّل</option><option value="false">متوقف</option></select></label>
+      <div class="actions" style="align-self:end"><button class="btn primary" onclick="saveCoupon()">حفظ الكود</button><button class="btn danger" id="couponDeleteBtn" onclick="deleteCoupon()" hidden>حذف</button></div>
+    </div>
+  </div>
+</section>
+<section class="section" id="customers"><div class="panel"><div class="panel-head"><h3>العملاء</h3></div><div class="empty">سيتم عرض بيانات العملاء والطلبات وPrime هنا.</div></div></section>
+<section class="section" id="prime">
+<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>🎁 تفعيل Prime يدويًا للعميل</h3></div><div class="form"><div class="bulk-help">اكتبي بريد العميل المسجل في Elora، واختاري مدة التفعيل. لا يحتاج العميل إلى دفع الاشتراك عند استخدام هذه الأداة. التفعيل يتم من حساب الإدارة فقط.</div><label>بريد العميل<input id="primeGrantEmail" type="email" placeholder="customer@example.com"></label><label>مدة Prime بالأيام<input id="primeGrantDays" type="number" min="1" value="30"></label><button class="btn primary" onclick="grantPrimeByEmail()">تفعيل Prime لهذا البريد</button><div id="primeGrantResult" class="bulk-result"></div></div></div>
+<div class="grid2"><div class="panel"><div class="panel-head"><h3>Elora Prime</h3></div><div class="form"><label>السعر الشهري<input value="300" type="number"></label><label>خصم Prime الإضافي %<input value="10" type="number"></label><label>الشحن المجاني حتى عدد طلبات شهريًا<input value="6" type="number"></label><button class="btn primary">حفظ إعدادات Prime</button></div></div><div class="panel"><div class="panel-head"><h3>الاشتراكات</h3></div><div class="empty">ستظهر الاشتراكات وتواريخ الانتهاء هنا.</div></div></div></section>
+<section class="section" id="shipping"><div class="panel"><div class="panel-head"><h3>الشحن</h3><button class="btn primary">+ إضافة محافظة</button></div><div class="empty">المحافظة ← المركز ← سعر التوصيل. كل الأسعار قابلة للتعديل.</div></div></section>
+<section class="section" id="payments"><div class="panel"><div class="panel-head"><h3>طرق الدفع</h3></div><div class="form"><label>الدفع عند الاستلام <select><option>مفعّل</option><option>غير مفعّل</option></select></label><label>Vodafone Cash <select><option>مفعّل</option><option>غير مفعّل</option></select></label><label>Visa / بطاقة <select><option>مفعّل</option><option>غير مفعّل</option></select></label><button class="btn primary">حفظ طرق الدفع</button></div></div></section>
+<section class="section" id="staff">
+  <div class="panel">
+    <div class="panel-head"><div><h3>الموظفون والصلاحيات</h3><p style="margin:4px 0 0;color:var(--muted);font-size:12px">تحكم كامل وفوري في ما يراه كل موظف وما يستطيع إضافته أو تعديله أو حذفه.</p></div><button class="btn primary" onclick="openStaffForm()">+ إضافة موظف</button></div>
+    <div class="toolbar"><input class="search" id="staffSearch" placeholder="ابحث بالبريد أو الاسم..." oninput="renderStaff()"><button class="btn light" onclick="refreshStaff()">تحديث الصلاحيات</button></div>
+    <div class="table-wrap"><table><thead><tr><th>الموظف</th><th>الدور</th><th>الحالة</th><th>الصلاحيات</th><th></th></tr></thead><tbody id="staffTable"><tr><td colspan="5" class="empty">جاري التحميل...</td></tr></tbody></table></div>
+  </div>
+  <div class="panel" id="staffEditor" hidden>
+    <div class="panel-head"><h3 id="staffEditorTitle">إضافة موظف</h3><button class="btn light" onclick="closeStaffForm()">إغلاق</button></div>
+    <div class="form">
+      <label>البريد الإلكتروني للمستخدم المسجل<input id="staffEmailInput" type="email" placeholder="employee@example.com"></label>
+      <label>الاسم الظاهر<input id="staffNameInput" placeholder="اسم الموظف"></label>
+      <label>الدور<select id="staffRoleInput"><option value="staff">موظف</option><option value="manager">مدير</option><option value="admin">مدير نظام</option><option value="owner">مالك</option></select></label>
+      <label style="display:flex;align-items:center;gap:8px"><input id="staffActiveInput" type="checkbox" checked style="width:auto"> الموظف مفعّل</label>
+      <div><h4 style="margin:4px 0 10px">الصلاحيات</h4><div id="permissionsGrid" class="permissions-grid"></div></div>
+      <div class="actions"><button class="btn primary" onclick="saveStaff()">حفظ الصلاحيات فورًا</button><button class="btn danger" onclick="deactivateStaff()" id="staffDeactivateBtn" hidden>تعطيل الموظف</button></div>
+      <div id="staffResult" class="bulk-result"></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="site-editor">
+  <div class="panel editor-shell">
+    <div class="panel-head"><div><h3>محرر الموقع البصري</h3><p style="margin:4px 0 0;color:var(--muted);font-size:12px">اختاري عنصرًا من المعاينة ثم عدّلي النص والحجم واللون والإخفاء. التعديلات تُحفظ في Supabase وتظهر للزوار.</p></div><div class="actions"><button class="btn light" onclick="sitePreviewReload()">تحديث المعاينة</button><button class="btn primary" onclick="saveVisualEditor()">حفظ التعديلات</button><button class="btn danger" onclick="resetVisualEditor()">استعادة التعديلات</button></div></div>
+    <div class="editor-grid">
+      <div class="visual-preview-wrap"><div class="preview-toolbar"><button class="btn light" onclick="setPreviewMode('desktop')">💻 كمبيوتر</button><button class="btn light" onclick="setPreviewMode('mobile')">📱 موبايل</button><span id="selectedSelector" class="status pending">لم يتم اختيار عنصر</span></div><iframe id="sitePreview" title="معاينة موقع Elora" src="index.html"></iframe></div>
+      <div class="editor-controls">
+        <div class="control-card"><h4>العنصر المحدد</h4><input id="veSelector" readonly placeholder="اضغط على أي عنصر داخل المعاينة"><label>النص<input id="veText" placeholder="اتركه فارغًا لعدم تغيير النص"></label><label>حجم الخط<input id="veFontSize" type="number" min="8" max="120" placeholder="مثال 20"></label><label>لون النص<input id="veColor" type="color" value="#241b25"></label><label>لون الخلفية<input id="veBg" type="color" value="#ffffff"></label><label>العرض %<input id="veWidth" type="number" min="1" max="100" placeholder="مثال 100"></label><label style="display:flex;align-items:center;gap:8px"><input id="veHidden" type="checkbox" style="width:auto"> إخفاء العنصر</label><button class="btn primary" onclick="applySelectedElement()">تطبيق على المعاينة</button></div>
+        <div class="control-card"><h4>إضافة قسم جديد</h4><label>عنوان القسم<input id="newSectionTitle" placeholder="مثال: وصل حديثًا"></label><label>وصف القسم<textarea id="newSectionText" placeholder="نص اختياري"></textarea></label><label>رابط الزر<input id="newSectionLink" placeholder="#products"></label><button class="btn primary" onclick="addVisualSection()">إضافة للقسم الرئيسي</button></div>
+        <div class="control-card"><h4>CSS متقدم — اختياري</h4><textarea id="veCss" style="min-height:130px" placeholder="لو احتجتِ تخصيصًا متقدمًا، اكتبيه هنا. لا حاجة للكود في التعديلات العادية."></textarea></div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="section" id="settings"><div class="grid2"><div class="panel"><div class="panel-head"><h3>بيانات المتجر</h3></div><div class="form"><label>اسم المتجر<input value="Elora"></label><label>العملة<input value="ج.م"></label><label>واتساب<input placeholder="رقم واتساب"></label><label>Instagram<input placeholder="رابط الحساب"></label><label>Facebook<input placeholder="رابط الصفحة"></label><button class="btn primary">حفظ</button></div></div><div class="panel"><div class="panel-head"><h3>حالة الاتصال</h3></div><div class="empty" id="connection">جاري فحص Supabase...</div></div></div></section>
+</main>
+</div>
+
+<script>
+let orders=[], products=[], coupons=[];
+let editingCouponId=null;
+const titles={home:"الرئيسية",orders:"الطلبات",products:"المنتجات",categories:"الأقسام",offers:"العروض والبنرات",coupons:"أكواد الخصم",customers:"العملاء",prime:"Elora Prime",shipping:"الشحن",payments:"الدفع",staff:"الموظفون والصلاحيات",settings:"الإعدادات",'site-editor':"تعديل الموقع"};
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>showSection(b.dataset.section));
+function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.getElementById(id)?.classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.section===id));document.getElementById('pageTitle').textContent=titles[id]||id; if(innerWidth<651)document.getElementById('sidebar').style.display='none';}
+async function dashboardLogin(){
+  const sb=window.eloraSupabase;if(!sb)return;
+  const email=document.getElementById('dashEmail').value.trim(),password=document.getElementById('dashPassword').value;
+  const err=document.getElementById('dashAuthError');err.textContent='';
+  if(!email||!password){err.textContent='اكتبي البريد وكلمة المرور';return;}
+  const r=await sb.auth.signInWithPassword({email,password});
+  if(r.error){err.textContent='بيانات الدخول غير صحيحة أو الحساب غير مفعّل';return;}
+  document.getElementById('dashboardAuth').hidden=true;
+  const emailEl=document.getElementById('adminEmail');if(emailEl)emailEl.textContent=r.data.user?.email||'مدير المتجر';
+  loadData();
+}
+async function dashboardLogout(){const sb=window.eloraSupabase;if(sb)await sb.auth.signOut();location.reload();}
+async function load(){
+  const sb=window.eloraSupabase;
+  if(!sb){document.getElementById('connection').textContent='لم يتم العثور على eloraSupabase. ضع نفس ملف supabase-config.js المستخدم مع المتجر.';return;}
+  const session=await sb.auth.getSession();
+  if(!session.data.session){document.getElementById('dashboardAuth').hidden=false;return;}
+  document.getElementById('dashboardAuth').hidden=true;
+  const emailEl=document.getElementById('adminEmail');if(emailEl)emailEl.textContent=session.data.session.user?.email||'مدير المتجر';
+  loadData();
+}
+async function loadData(){
+  const sb=window.eloraSupabase;
+  if(!sb)return;
+  document.getElementById('connection').innerHTML='<span style="color:var(--green)">● Supabase متصل</span>';
+  try{let r=await sb.from('products').select('*').order('created_at',{ascending:false}).limit(500);if(!r.error)products=r.data||[];renderProductFilters();renderProducts();}
+  catch(e){}
+  try{let r=await sb.from('orders').select('*').order('created_at',{ascending:false}).limit(100);if(!r.error)orders=r.data||[];renderOrders();renderHome();}
+  catch(e){renderHome();}
+  try{let r=await sb.from('coupons').select('*').order('created_at',{ascending:false}).limit(300);if(!r.error)coupons=r.data||[];renderCoupons();}
+  catch(e){renderCoupons();}
+}
+function money(v){return Number(v||0).toLocaleString('ar-EG')+' ج.م'}
+function couponDate(v){return v?new Date(v).toLocaleDateString('ar-EG'):'—'}
+function couponDiscountLabel(c){return c.discount_type==='percent'?`${Number(c.discount_value||0)}%`:`${money(c.discount_value)}`}
+function renderCoupons(){
+  const el=document.getElementById('couponsTable'); if(!el)return;
+  const q=(document.getElementById('couponSearch')?.value||'').toLowerCase();
+  const st=document.getElementById('couponStatusFilter')?.value||'';
+  const arr=coupons.filter(c=>(!q||String(c.code||'').toLowerCase().includes(q))&&(!st||(st==='active'?c.active:!c.active)));
+  el.innerHTML=arr.length?arr.map(c=>`<tr><td><b>${escDash(c.code)}</b></td><td>${couponDiscountLabel(c)}</td><td>${c.free_shipping?'🚚 مجاني':'—'}</td><td>${money(c.min_order||0)}</td><td>${c.max_discount?money(c.max_discount):'—'}</td><td>${Number(c.usage_limit||0)>0?`${Number(c.used_count||0)} / ${Number(c.usage_limit)}`:`${Number(c.used_count||0)} / ∞`}</td><td>${couponDate(c.starts_at)}</td><td>${couponDate(c.expires_at)}</td><td><span class="status ${c.active?'done':'cancel'}">${c.active?'مفعّل':'متوقف'}</span></td><td><button class="btn light" onclick="editCoupon('${c.id}')">تعديل</button></td></tr>`).join(''):'<tr><td colspan="10" class="empty">لا توجد أكواد خصم.</td></tr>';
+}
+function escDash(v){return String(v??'').replace(/[&<>'"]/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[s]))}
+function openCouponForm(c=null){
+  editingCouponId=c?.id||null;
+  document.getElementById('couponEditor').hidden=false;
+  document.getElementById('couponEditorTitle').textContent=editingCouponId?'تعديل كود الخصم':'إضافة كود خصم';
+  document.getElementById('couponCodeAdmin').value=c?.code||'';
+  document.getElementById('couponTypeAdmin').value=c?.discount_type||'percent';
+  document.getElementById('couponValueAdmin').value=c?.discount_value??'';
+  document.getElementById('couponFreeShippingAdmin').checked=!!c?.free_shipping;
+  document.getElementById('couponMinAdmin').value=c?.min_order??0;
+  document.getElementById('couponMaxAdmin').value=c?.max_discount??'';
+  document.getElementById('couponLimitAdmin').value=c?.usage_limit??'';
+  document.getElementById('couponStartAdmin').value=c?.starts_at?new Date(c.starts_at).toISOString().slice(0,16):'';
+  document.getElementById('couponEndAdmin').value=c?.expires_at?new Date(c.expires_at).toISOString().slice(0,16):'';
+  document.getElementById('couponActiveAdmin').value=String(c?.active!==false);
+  document.getElementById('couponDeleteBtn').hidden=!editingCouponId;
+  document.getElementById('couponEditor').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function closeCouponForm(){editingCouponId=null;const e=document.getElementById('couponEditor');if(e)e.hidden=true;}
+function editCoupon(id){const c=coupons.find(x=>String(x.id)===String(id));if(c)openCouponForm(c)}
+async function saveCoupon(){
+  const sb=window.eloraSupabase;if(!sb){alert('Supabase غير متصل');return;}
+  const code=document.getElementById('couponCodeAdmin').value.trim().toUpperCase();
+  const type=document.getElementById('couponTypeAdmin').value;
+  const value=Number(document.getElementById('couponValueAdmin').value||0);
+  const min=Number(document.getElementById('couponMinAdmin').value||0);
+  const maxRaw=document.getElementById('couponMaxAdmin').value.trim();
+  const limitRaw=document.getElementById('couponLimitAdmin').value.trim();
+  const starts=document.getElementById('couponStartAdmin').value;
+  const ends=document.getElementById('couponEndAdmin').value;
+  const freeShipping=document.getElementById('couponFreeShippingAdmin').checked;
+  if(!code||(!freeShipping&&value<=0)||value<0){alert(freeShipping?'اكتبي الكود وقيمة الخصم (يمكن أن تكون 0 مع الشحن المجاني).':'اكتبي الكود وقيمة الخصم بشكل صحيح');return;}
+  if(type==='percent'&&value>100){alert('النسبة لا يمكن أن تتجاوز 100%');return;}
+  if(min<0||(maxRaw&&Number(maxRaw)<0)||(limitRaw&&Number(limitRaw)<0)){alert('تحققي من القيم المدخلة');return;}
+  const payload={code,discount_type:type,discount_value:value,free_shipping:freeShipping,min_order:min,max_discount:maxRaw?Number(maxRaw):null,usage_limit:limitRaw?Number(limitRaw):null,starts_at:starts?new Date(starts).toISOString():null,expires_at:ends?new Date(ends).toISOString():null,active:document.getElementById('couponActiveAdmin').value==='true'};
+  try{
+    let r=editingCouponId?await sb.from('coupons').update(payload).eq('id',editingCouponId):await sb.from('coupons').insert([payload]);
+    if(r.error)throw r.error;
+    alert(editingCouponId?'تم تعديل كود الخصم':'تم إنشاء كود الخصم');
+    const rr=await sb.from('coupons').select('*').order('created_at',{ascending:false}).limit(300);coupons=rr.data||[];renderCoupons();closeCouponForm();
+  }catch(e){console.error(e);alert('تعذر حفظ الكود: '+(e.message||'خطأ غير معروف'));}
+}
+async function deleteCoupon(){
+  if(!editingCouponId||!confirm('هل تريدين حذف كود الخصم؟'))return;
+  const sb=window.eloraSupabase;if(!sb)return;
+  const r=await sb.from('coupons').delete().eq('id',editingCouponId);if(r.error){alert('تعذر حذف الكود: '+r.error.message);return;}
+  coupons=coupons.filter(c=>String(c.id)!==String(editingCouponId));renderCoupons();closeCouponForm();
+}
+function renderProductFilters(){const s=document.getElementById('productCategoryFilter');if(!s)return;const current=s.value;const cats=[...new Set(products.map(p=>String(p.category||p.section||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));s.innerHTML='<option value="">كل الأقسام</option>'+cats.map(c=>`<option value="${escDash(c)}">${escDash(c)}</option>`).join('');s.value=current&&cats.includes(current)?current:''}
+function renderProducts(){let el=document.getElementById('productsTable');if(!el)return;const q=(document.getElementById('productSearch')?.value||'').trim().toLowerCase();const cat=document.getElementById('productCategoryFilter')?.value||'';const arr=products.filter(p=>{const text=String(p.name||'')+' '+String(p.code||'')+' '+String(p.category||p.section||'');return(!q||text.toLowerCase().includes(q))&&(!cat||String(p.category||p.section||'')===cat)});if(!arr.length){el.innerHTML='<tr><td colspan="7" class="empty">لا توجد منتجات مطابقة.</td></tr>';return}el.innerHTML=arr.map(p=>{const colors=Array.isArray(p.colors)?p.colors.join('، '):(p.colors||'');const sizes=Array.isArray(p.sizes)?p.sizes.join('، '):(p.sizes||'');return `<tr><td>${p.image||p.image_url?'<img loading="lazy" src="'+escDash(p.image||p.image_url)+'" style="width:42px;height:42px;object-fit:cover;border-radius:9px">':'—'}</td><td>${escDash(p.name||p.title||'—')}</td><td>${escDash(p.category||p.section||'—')}</td><td>${money(p.price??p.sale_price)}</td><td>${money(p.wholesale_price??p.wholesalePrice)}</td><td>${escDash(p.code||p.product_code||'—')}</td><td>${escDash(p.stock??p.inventory??'—')}<div style="font-size:10px;color:var(--muted);margin-top:3px">${colors?'ألوان: '+escDash(colors):''}${colors&&sizes?' • ':''}${sizes?'مقاسات: '+escDash(sizes):''}</div></td></tr>`}).join('')}
+function renderOrders(){let q=(document.getElementById('orderSearch')?.value||'').toLowerCase(), st=document.getElementById('orderStatus')?.value||'';let arr=orders.filter(o=>{let text=JSON.stringify(o).toLowerCase();return(!q||text.includes(q))&&(!st||o.status===st)});let el=document.getElementById('ordersTable');el.innerHTML=arr.length?arr.map(o=>`<tr><td>#${o.id||o.order_number||'—'}</td><td>${o.customer_name||o.name||o.customer||'—'}</td><td>${o.phone||o.customer_phone||'—'}</td><td>${money(o.total??o.subtotal)}</td><td>${o.created_at?new Date(o.created_at).toLocaleDateString('ar-EG'):'—'}</td><td><span class="status ${o.status==='تم التسليم'?'done':o.status==='ملغي'?'cancel':'pending'}">${o.status||'جديد'}</span></td><td><button class="btn light">التفاصيل</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">لا توجد طلبات.</td></tr>'}
+function renderHome(){document.getElementById('ordersCount').textContent=orders.length;let sales=orders.reduce((s,o)=>s+Number(o.total??o.subtotal??0),0);document.getElementById('sales').textContent=money(sales);let profit=orders.reduce((s,o)=>s+Number(o.profit??0),0);document.getElementById('profit').textContent=money(profit);document.getElementById('recentOrders').innerHTML=orders.slice(0,6).map(o=>`<tr><td>#${o.id||o.order_number||'—'}</td><td>${o.customer_name||o.name||'—'}</td><td>${money(o.total??o.subtotal)}</td><td>${o.payment_method||'—'}</td><td><span class="status pending">${o.status||'جديد'}</span></td></tr>`).join('')||'<tr><td colspan="5" class="empty">لا توجد طلبات حتى الآن.</td></tr>'}
+
+let bulkRows=[], bulkImageMap=new Map();
+function openBulkImport(){const p=document.getElementById('bulkImportPanel');if(p){p.hidden=false;p.scrollIntoView({behavior:'smooth',block:'start'})}}
+function closeBulkImport(){const p=document.getElementById('bulkImportPanel');if(p)p.hidden=true}
+function normalizeKey(v){return String(v??'').trim().toLowerCase().replace(/\\/g,'/').split('/').pop().replace(/\.[^.]+$/,'')}
+function getRowValue(row, keys){for(const k of keys){if(row[k]!==undefined&&row[k]!==null&&String(row[k]).trim()!=='')return row[k]}return ''}
+function normalizeProductRow(r){return {name:String(getRowValue(r,['name','اسم المنتج','الاسم','product_name'])).trim(),description:String(getRowValue(r,['description','الوصف','وصف'])).trim(),category:String(getRowValue(r,['category','section','القسم'])).trim(),price:Number(getRowValue(r,['price','sale_price','سعر البيع','السعر'])||0),old_price:Number(getRowValue(r,['old_price','oldPrice','السعر القديم'])||0),wholesale_price:Number(getRowValue(r,['wholesale_price','wholesalePrice','سعر الجملة'])||0),code:String(getRowValue(r,['code','product_code','كود المنتج','الكود'])).trim(),stock:parseInt(getRowValue(r,['stock','inventory','المخزون','الكمية'])||0,10)||0,discount:Number(getRowValue(r,['discount','الخصم'])||0),featured:Boolean(getRowValue(r,['featured','مميز'])===true||['1','true','yes','نعم'].includes(String(getRowValue(r,['featured','مميز'])).toLowerCase())),active:!['0','false','no','لا'].includes(String(getRowValue(r,['active','نشط'])).toLowerCase()),image:String(getRowValue(r,['image','image_url','الصورة','رابط الصورة'])).trim()||null}}
+async function previewBulkImport(){const input=document.getElementById('bulkProductsFile'),preview=document.getElementById('bulkPreview'),btn=document.getElementById('bulkImportBtn');bulkRows=[];if(!input?.files?.[0]){preview.textContent='لم يتم اختيار ملف بعد.';btn.disabled=true;return}try{const data=await input.files[0].arrayBuffer();const wb=XLSX.read(data,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{defval:''});bulkRows=rows.map(normalizeProductRow).filter(r=>r.name||r.code);const missingCode=bulkRows.filter(r=>!r.code).length;preview.innerHTML=`تم العثور على <b>${bulkRows.length.toLocaleString('ar-EG')}</b> منتج. ${missingCode?`<span style="color:var(--orange)">${missingCode.toLocaleString('ar-EG')} بدون كود.</span>`:'كل المنتجات تحتوي على كود.'}<br>الأعمدة المدعومة: الاسم، الوصف، القسم، السعر، السعر القديم، سعر الجملة، الكود، المخزون، الخصم، مميز، نشط، رابط الصورة.`;btn.disabled=!bulkRows.length}catch(e){preview.textContent='تعذر قراءة ملف Excel/CSV: '+(e.message||'خطأ غير معروف');btn.disabled=true}}
+function previewBulkImages(){const files=[...(document.getElementById('bulkImagesFiles')?.files||[])];bulkImageMap=new Map();for(const f of files)bulkImageMap.set(normalizeKey(f.name),f);const preview=document.getElementById('bulkPreview');if(files.length)preview.innerHTML+=(preview.innerHTML?'<br>':'')+`تم اختيار <b>${files.length.toLocaleString('ar-EG')}</b> صورة. المطابقة تكون بالكود أولًا ثم اسم الملف.`}
+function imageForRow(row){if(!bulkImageMap.size)return null;return bulkImageMap.get(normalizeKey(row.code))||bulkImageMap.get(normalizeKey(row.name))||null}
+function setBulkProgress(pct,text){const wrap=document.getElementById('bulkProgress');wrap.hidden=false;document.getElementById('bulkProgressBar').style.width=pct+'%';document.getElementById('bulkProgressText').textContent=text||pct+'%'}
+async function compressImage(file){if(!file||!file.type.startsWith('image/'))return file;try{const bitmap=await createImageBitmap(file);const max=1200;const scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));const ctx=canvas.getContext('2d',{alpha:true});ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);const blob=await new Promise(r=>canvas.toBlob(r,'image/webp',0.82));if(!blob)return file;return new File([blob],(normalizeKey(file.name)||'product')+'.webp',{type:'image/webp'})}catch(e){return file}}
+async function uploadImageToR2(file,code){const url=(window.ELORA_IMAGE_UPLOAD_URL||'').trim();if(!url)return null;const small=await compressImage(file);const fd=new FormData();fd.append('file',small,small.name);fd.append('code',code||normalizeKey(file.name));const session=await window.eloraSupabase?.auth.getSession();const token=session?.data?.session?.access_token||'';if(!token)throw new Error('انتهت جلسة الدخول');const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token},body:fd});if(!r.ok)throw new Error('فشل رفع الصورة إلى R2');const j=await r.json();return j.url||j.publicUrl||null}
+async function runBulkImport(){const sb=window.eloraSupabase,btn=document.getElementById('bulkImportBtn'),result=document.getElementById('bulkResult');if(!sb){result.className='bulk-result err';result.textContent='Supabase غير متصل.';return}if(!bulkRows.length)return;btn.disabled=true;result.className='bulk-result';result.textContent='';let ok=0,images=0;const batchSize=250;try{for(let start=0;start<bulkRows.length;start+=batchSize){const batch=bulkRows.slice(start,start+batchSize);for(const row of batch){const file=imageForRow(row);if(file){try{const r2=await uploadImageToR2(file,row.code);if(r2){row.image=r2;images++}}catch(e){}}}let r=await sb.from('products').upsert(batch,{onConflict:'code',ignoreDuplicates:false});if(r.error){r=await sb.from('products').insert(batch);if(r.error)throw r.error}ok+=batch.length;setBulkProgress(Math.min(100,Math.round(((start+batch.length)/bulkRows.length)*100)),`تم استيراد ${Math.min(start+batch.length,bulkRows.length).toLocaleString('ar-EG')} من ${bulkRows.length.toLocaleString('ar-EG')}`)}result.className='bulk-result ok';result.innerHTML=`اكتمل الاستيراد: <b>${ok.toLocaleString('ar-EG')}</b> منتج، وتم رفع <b>${images.toLocaleString('ar-EG')}</b> صورة مضغوطة إلى R2.`;const rr=await sb.from('products').select('*').order('created_at',{ascending:false}).limit(500);if(!rr.error)products=rr.data||products;renderProductFilters();renderProducts()}catch(e){result.className='bulk-result err';result.innerHTML=`توقف الاستيراد بعد <b>${ok.toLocaleString('ar-EG')}</b> منتج. السبب: ${escDash(e.message||'خطأ غير معروف')}` }finally{btn.disabled=false}}
+function downloadProductTemplate(){const rows=[{code:'EL001',name:'اسم المنتج',description:'وصف المنتج',category:'إكسسوارات',price:250,old_price:300,wholesale_price:150,stock:20,discount:0,featured:true,active:true,image:'EL001.jpg'}];const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Products');XLSX.writeFile(wb,'Elora_Products_Template.xlsx')}
+
+// ===== Staff permissions / real-time access control =====
+const PERMISSION_GROUPS={
+  'المنتجات':['products.view','products.add','products.edit','products.delete','products.import','products.export','products.view_price','products.view_wholesale','products.edit_price','products.stock','products.options'],
+  'الطلبات':['orders.view','orders.edit','orders.delete','orders.customer_data','orders.view_wholesale'],
+  'التقارير والأرباح':['reports.sales','reports.profit','reports.wholesale'],
+  'الموقع':['site.edit','site.sections','site.hero','site.design','site.css'],
+  'العروض والأكواد':['offers.view','offers.manage','coupons.view','coupons.manage'],
+  'الشحن والدفع':['shipping.view','shipping.manage','payments.view','payments.manage'],
+  'Prime والعملاء':['prime.view','prime.manage','prime.manual_grant','customers.view','customers.manage'],
+  'الإعدادات والموظفون':['settings.manage','staff.view','staff.manage']
+};
+const PERMISSION_LABELS={
+'products.view':'مشاهدة المنتجات','products.add':'إضافة المنتجات','products.edit':'تعديل المنتجات','products.delete':'حذف المنتجات','products.import':'استيراد Excel/CSV','products.export':'تصدير المنتجات','products.view_price':'مشاهدة سعر البيع','products.view_wholesale':'مشاهدة سعر الجملة','products.edit_price':'تعديل الأسعار','products.stock':'إدارة المخزون','products.options':'الألوان والمقاسات والمتغيرات','orders.view':'مشاهدة الطلبات','orders.edit':'تعديل الطلبات','orders.delete':'حذف الطلبات','orders.customer_data':'بيانات العملاء','orders.view_wholesale':'سعر الجملة في الطلبات','reports.sales':'تقارير المبيعات','reports.profit':'الأرباح','reports.wholesale':'التكلفة وسعر الجملة','site.edit':'تعديل الموقع','site.sections':'الأقسام','site.hero':'السلايدر والبنرات','site.design':'الألوان والتصميم','site.css':'CSS متقدم','offers.view':'مشاهدة العروض','offers.manage':'إدارة العروض','coupons.view':'مشاهدة الأكواد','coupons.manage':'إدارة الأكواد','shipping.view':'مشاهدة الشحن','shipping.manage':'إدارة الشحن','payments.view':'مشاهدة الدفع','payments.manage':'إدارة الدفع','prime.view':'مشاهدة Prime','prime.manage':'إدارة Prime','prime.manual_grant':'تفعيل Prime يدويًا','customers.view':'مشاهدة العملاء','customers.manage':'إدارة العملاء','settings.manage':'إعدادات المتجر','staff.view':'مشاهدة الموظفين','staff.manage':'إدارة الموظفين'};
+let currentStaff=[],editingStaffId=null,currentPermissions={};
+function defaultStaffPermissions(){const p={};Object.values(PERMISSION_GROUPS).flat().forEach(k=>p[k]=false);['products.view','products.view_price','orders.view','orders.customer_data','customers.view'].forEach(k=>p[k]=true);return p}
+function isManagerRole(role){return ['owner','admin','manager'].includes(String(role||'').toLowerCase())}
+async function getMyStaffProfile(){const sb=window.eloraSupabase;if(!sb)return null;const uid=(await sb.auth.getUser()).data.user?.id;if(!uid)return null;const r=await sb.from('staff_profiles').select('id,role,permissions,active,name,email').eq('id',uid).maybeSingle();if(r.error)return null;return r.data}
+async function loadStaffAccess(){const me=await getMyStaffProfile();if(!me){applyAccess({});return}if(!me.active){await window.eloraSupabase.auth.signOut();location.reload();return}currentPermissions=Object.assign(defaultStaffPermissions(),me.permissions||{});if(isManagerRole(me.role))Object.keys(currentPermissions).forEach(k=>currentPermissions[k]=true);window.eloraStaff={id:me.id,role:me.role,active:me.active,permissions:currentPermissions};applyAccess(currentPermissions);subscribeStaffRealtime(me.id);}
+function can(p){return isManagerRole(window.eloraStaff?.role)||!!window.eloraStaff?.permissions?.[p]}
+function applyAccess(perms){document.querySelectorAll('[data-permission]').forEach(el=>{const p=el.dataset.permission;el.hidden=!can(p)});const staffNav=document.querySelector('[data-section="staff"]');if(staffNav)staffNav.hidden=!can('staff.manage');const profit=document.querySelector('[data-permission="reports.profit"]');if(profit)profit.hidden=!can('reports.profit');if(!can('staff.manage')&&document.getElementById('staff')?.classList.contains('active'))showSection('home');const wh=can('products.view_wholesale');document.querySelectorAll('[data-wholesale]').forEach(el=>el.hidden=!wh);}
+function requirePermission(p){if(can(p))return true;alert('ليس لديك صلاحية لهذا الإجراء.');return false}
+function renderPermissionGrid(perms){const box=qs('permissionsGrid');if(!box)return;box.innerHTML=Object.entries(PERMISSION_GROUPS).map(([g,keys])=>`<div class="perm-group">${g}</div>`+keys.map(k=>`<label class="permission-item"><span>${PERMISSION_LABELS[k]||k}</span><input type="checkbox" data-perm="${k}" ${perms[k]?'checked':''}></label>`).join('')).join('')}
+function openStaffForm(staff){if(!requirePermission('staff.manage'))return;editingStaffId=staff?.id||null;qs('staffEditor').hidden=false;qs('staffEditorTitle').textContent=staff?'تعديل موظف':'إضافة موظف';qs('staffEmailInput').value=staff?.email||'';qs('staffEmailInput').readOnly=!!staff;qs('staffNameInput').value=staff?.name||'';qs('staffRoleInput').value=staff?.role||'staff';qs('staffActiveInput').checked=staff?.active!==false;qs('staffDeactivateBtn').hidden=!staff;currentPermissions=Object.assign(defaultStaffPermissions(),staff?.permissions||{});renderPermissionGrid(currentPermissions);window.scrollTo({top:document.getElementById('staff').offsetTop,behavior:'smooth'})}
+function closeStaffForm(){qs('staffEditor').hidden=true;editingStaffId=null}
+async function refreshStaff(){if(!requirePermission('staff.manage'))return;const sb=window.eloraSupabase;if(!sb)return;const r=await sb.from('staff_profiles').select('id,email,name,role,permissions,active,updated_at').order('created_at',{ascending:false});if(r.error){qs('staffTable').innerHTML=`<tr><td colspan="5" class="empty">${escDash(r.error.message)}</td></tr>`;return}currentStaff=r.data||[];renderStaff()}
+function renderStaff(){const q=(qs('staffSearch')?.value||'').toLowerCase();const arr=currentStaff.filter(x=>(`${x.email||''} ${x.name||''}`).toLowerCase().includes(q));qs('staffTable').innerHTML=arr.length?arr.map(s=>{const active=s.active!==false;const enabled=Object.entries(s.permissions||{}).filter(([,v])=>v).length;return `<tr><td><b>${escDash(s.name||'بدون اسم')}</b><div style="font-size:10px;color:var(--muted)">${escDash(s.email||'')}</div></td><td>${escDash(s.role||'staff')}</td><td><span class="status ${active?'done':'cancel'}">${active?'مفعّل':'متوقف'}</span></td><td>${isManagerRole(s.role)?'<span class="staff-pill">كل الصلاحيات</span>':`<span class="staff-pill">${enabled} صلاحية</span>`}</td><td><button class="btn light" onclick='openStaffForm(${JSON.stringify(s).replace(/</g,'\u003c')})'>تعديل</button></td></tr>`}).join(''):'<tr><td colspan="5" class="empty">لا يوجد موظفون.</td></tr>'}
+async function saveStaff(){if(!requirePermission('staff.manage'))return;const email=qs('staffEmailInput').value.trim();if(!email)return alert('اكتب البريد الإلكتروني');const permissions={};document.querySelectorAll('#permissionsGrid [data-perm]').forEach(i=>permissions[i.dataset.perm]=i.checked);const sb=window.eloraSupabase;const payload={p_email:email,p_name:qs('staffNameInput').value.trim()||null,p_role:qs('staffRoleInput').value,p_permissions:permissions,p_active:qs('staffActiveInput').checked};const out=qs('staffResult');out.textContent='جاري الحفظ...';try{const r=await sb.rpc('admin_upsert_staff_by_email',payload);if(r.error)throw r.error;out.className='bulk-result ok';out.textContent='تم حفظ الموظف والصلاحيات فورًا.';await refreshStaff();closeStaffForm()}catch(e){out.className='bulk-result err';out.textContent='تعذر الحفظ: '+(e.message||'خطأ غير معروف')}}
+async function deactivateStaff(){if(!requirePermission('staff.manage')||!editingStaffId)return;const sb=window.eloraSupabase;const r=await sb.rpc('admin_set_staff_active',{p_staff_id:editingStaffId,p_active:false});if(r.error)return alert(r.error.message);await refreshStaff();closeStaffForm()}
+function subscribeStaffRealtime(myId){const sb=window.eloraSupabase;if(!sb)return;try{sb.channel('elora-staff-access-'+myId).on('postgres_changes',{event:'UPDATE',schema:'public',table:'staff_profiles',filter:'id=eq.'+myId},payload=>{const row=payload.new||{};if(row.active===false){sb.auth.signOut().then(()=>location.reload());return}currentPermissions=Object.assign(defaultStaffPermissions(),row.permissions||{});if(isManagerRole(row.role))Object.keys(currentPermissions).forEach(k=>currentPermissions[k]=true);window.eloraStaff={id:myId,role:row.role,active:row.active,permissions:currentPermissions};applyAccess(currentPermissions);}).subscribe();setInterval(loadStaffAccess,15000)}catch(e){setInterval(loadStaffAccess,15000)}}
+
+load();
+loadStaffAccess().then(refreshStaff);
+
+// ===== Elora Dashboard V2 =====
+let visualState={elements:{},customSections:[],css:''};
+let visualSelected=null;
+function qs(id){return document.getElementById(id)}
+function safeText(v){return String(v??'').replace(/[&<>'"]/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[s]))}
+async function loadVisualState(){const sb=window.eloraSupabase;if(!sb)return;try{const r=await sb.from('site_customizations').select('config').eq('id',1).maybeSingle();if(!r.error&&r.data?.config)visualState=Object.assign({elements:{},customSections:[],css:''},r.data.config);applyVisualStateToFrame()}catch(e){console.warn(e)}}
+function frameDoc(){try{return qs('sitePreview').contentDocument}catch(e){return null}}
+function makeSelector(el){if(!el||el===frameDoc()?.body)return 'body';if(el.id)return '#'+CSS.escape(el.id);let path=[],cur=el;while(cur&&cur.nodeType===1&&cur!==frameDoc().body&&path.length<5){let part=cur.tagName.toLowerCase();if(cur.classList?.length)part+='.'+[...cur.classList].slice(0,2).map(CSS.escape).join('.');let parent=cur.parentElement;if(parent){let same=[...parent.children].filter(x=>x.tagName===cur.tagName);if(same.length>1)part+=`:nth-of-type(${same.indexOf(cur)+1})`}path.unshift(part);cur=parent}return path.join(' > ')}
+function bindFramePicker(){const doc=frameDoc();if(!doc)return;doc.querySelectorAll('*').forEach(el=>{el.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();visualSelected=el;qs('veSelector').value=makeSelector(el);qs('selectedSelector').textContent=makeSelector(el);qs('veText').value=el.innerText?.trim().slice(0,500)||'';const cs=getComputedStyle(el);qs('veFontSize').value=parseInt(cs.fontSize)||'';qs('veColor').value=rgbToHex(cs.color)||'#241b25';qs('veBg').value=rgbToHex(cs.backgroundColor)||'#ffffff';qs('veWidth').value=Math.round((parseFloat(cs.width||0)/(el.parentElement?.clientWidth||1))*100)||'';qs('veHidden').checked=el.style.display==='none';},{capture:true})})}
+function rgbToHex(v){const m=String(v||'').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);return m?'#'+[m[1],m[2],m[3]].map(x=>Number(x).toString(16).padStart(2,'0')).join(''):''}
+function applyVisualStateToFrame(){const doc=frameDoc();if(!doc)return;Object.entries(visualState.elements||{}).forEach(([sel,c])=>{try{const el=doc.querySelector(sel);if(!el)return;if(c.text!==undefined)el.innerText=c.text;if(c.styles)Object.assign(el.style,c.styles);if(c.hidden)el.style.display='none';else if(c.hidden===false)el.style.display='';}catch(e){}});let old=doc.getElementById('elora-dashboard-custom-css');if(old)old.remove();if(visualState.css){old=doc.createElement('style');old.id='elora-dashboard-custom-css';old.textContent=visualState.css;doc.head.appendChild(old)}(visualState.customSections||[]).forEach(sec=>{if(!doc.getElementById('elora-custom-section-'+sec.id)){const wrap=doc.createElement('section');wrap.id='elora-custom-section-'+sec.id;wrap.className='elora-dashboard-custom-section';wrap.style.cssText='padding:40px 20px;margin:20px 0;border-radius:24px;background:linear-gradient(135deg,#fff0f7,#f4e8ff);text-align:center';wrap.innerHTML=`<h2>${safeText(sec.title)}</h2><p>${safeText(sec.text||'')}</p>${sec.link?`<a href="${safeText(sec.link)}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#d81b86;color:#fff;text-decoration:none">اكتشفي الآن</a>`:''}`;doc.body.appendChild(wrap)}})}
+function sitePreviewReload(){qs('sitePreview').contentWindow.location.reload()}
+function setPreviewMode(mode){const w=qs('visual-preview-wrap');w.classList.toggle('mobile',mode==='mobile')}
+function applySelectedElement(){if(!visualSelected)return alert('اختاري عنصرًا من المعاينة أولًا');const sel=makeSelector(visualSelected),text=qs('veText').value;const c={text,styles:{}};if(qs('veFontSize').value)c.styles.fontSize=qs('veFontSize').value+'px';if(qs('veColor').value)c.styles.color=qs('veColor').value;if(qs('veBg').value)c.styles.backgroundColor=qs('veBg').value;if(qs('veWidth').value)c.styles.width=qs('veWidth').value+'%';c.hidden=qs('veHidden').checked;visualState.elements[sel]=c;applyVisualStateToFrame()}
+function addVisualSection(){const title=qs('newSectionTitle').value.trim();if(!title)return alert('اكتبي عنوان القسم');visualState.customSections.push({id:Date.now(),title,text:qs('newSectionText').value.trim(),link:qs('newSectionLink').value.trim()});applyVisualStateToFrame();qs('newSectionTitle').value='';qs('newSectionText').value='';qs('newSectionLink').value=''}
+async function saveVisualEditor(){if(!requirePermission('site.edit'))return;const sb=window.eloraSupabase;if(!sb)return alert('Supabase غير متصل');visualState.css=qs('veCss').value;const r=await sb.from('site_customizations').upsert({id:1,config:visualState,updated_at:new Date().toISOString()},{onConflict:'id'});if(r.error)return alert('تعذر حفظ تعديلات الموقع: '+r.error.message);alert('تم حفظ تعديلات الموقع بنجاح')}
+async function resetVisualEditor(){if(!requirePermission('site.edit'))return;if(!confirm('استعادة إعدادات الموقع المحفوظة؟'))return;visualState={elements:{},customSections:[],css:''};qs('veCss').value='';applyVisualStateToFrame();const sb=window.eloraSupabase;if(sb)await sb.from('site_customizations').upsert({id:1,config:visualState,updated_at:new Date().toISOString()},{onConflict:'id'});}
+qs('sitePreview')?.addEventListener('load',()=>{setTimeout(()=>{loadVisualState();bindFramePicker()},1500)});
+async function grantPrimeByEmail(){if(!requirePermission('prime.manual_grant'))return;const email=qs('primeGrantEmail').value.trim();const days=Math.max(1,parseInt(qs('primeGrantDays').value||30,10));const out=qs('primeGrantResult');if(!email){out.className='bulk-result err';out.textContent='اكتبي البريد الإلكتروني.';return}const sb=window.eloraSupabase;if(!sb){out.textContent='Supabase غير متصل.';return}out.className='bulk-result';out.textContent='جاري التفعيل...';try{const r=await sb.rpc('admin_grant_prime_by_email',{p_email:email,p_days:days});if(r.error)throw r.error;out.className='bulk-result ok';out.textContent='تم تفعيل Elora Prime للعميل بنجاح.'}catch(e){out.className='bulk-result err';out.textContent='تعذر التفعيل: '+(e.message||'تأكدي أن البريد مسجل وأن حسابك إداري.')}}
+function normalizeArabicHeader(v){return String(v??'').trim().toLowerCase().replace(/[\u200e\u200f]/g,'')}
+function getRowValueV2(row, keys){for(const k of keys){if(row[k]!==undefined&&row[k]!==null&&String(row[k]).trim()!=='')return row[k]}return ''}
+function splitOptional(v){return String(v??'').split(/[,،|\\/]+/).map(x=>x.trim()).filter(Boolean)}
+let editingProductId=null;
+function openProductEditor(product=null){
+  if(!requirePermission(product?'products.edit':'products.add')) return;
+  editingProductId=product?.id||null;
+  qs('productEditor').hidden=false;
+  qs('productEditorTitle').textContent=product?'تعديل المنتج':'إضافة منتج';
+  qs('productEditorResult').textContent='';
+  ['peCode','peName','peCategory','pePrice','peOldPrice','peWholesale','peStock','peImage','peDescription','peSizes','peVariants'].forEach(id=>{const e=qs(id);if(e)e.value='';});
+  qs('peStock').value='0'; qs('colorRows').innerHTML='';
+  if(product){
+    qs('peCode').value=product.code||product.product_code||''; qs('peName').value=product.name||''; qs('peCategory').value=product.category||product.section||'';
+    qs('pePrice').value=product.price??''; qs('peOldPrice').value=product.old_price??''; qs('peWholesale').value=product.wholesale_price??''; qs('peStock').value=product.stock??0; qs('peImage').value=product.image||''; qs('peDescription').value=product.description||'';
+    const sizes=Array.isArray(product.sizes)?product.sizes:[]; qs('peSizes').value=sizes.join('\n');
+    qs('peVariants').value=product.variants?.length?JSON.stringify(product.variants,null,2):'';
+    const cols=Array.isArray(product.color_options)&&product.color_options.length?product.color_options:(Array.isArray(product.colors)?product.colors.map(x=>({name:String(x),hex:'#d946ef'})):[]);
+    cols.forEach(c=>addColorRow(c));
+  } else addColorRow();
+  applyAccess(window.currentStaffPermissions||{});
+  qs('productEditor').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function closeProductEditor(){editingProductId=null;if(qs('productEditor'))qs('productEditor').hidden=true;}
+function addColorRow(c={name:'',hex:'#d946ef'}){const wrap=qs('colorRows');if(!wrap)return;const row=document.createElement('div');row.className='color-row';row.innerHTML=`<input class="color-picker" type="color" value="${escDash(c.hex||'#d946ef')}" oninput="this.nextElementSibling.style.background=this.value;this.parentElement.querySelector('.color-hex').value=this.value"><span class="color-preview" style="background:${escDash(c.hex||'#d946ef')}"></span><input class="color-name" placeholder="اسم اللون (اختياري)" value="${escDash(c.name||'')}"><input class="color-hex" placeholder="#RRGGBB" value="${escDash(c.hex||'#d946ef')}" maxlength="7" oninput="const v=this.value;this.parentElement.querySelector('.color-picker').value=/^#[0-9a-fA-F]{6}$/.test(v)?v:'#d946ef';this.parentElement.querySelector('.color-preview').style.background=v"><button type="button" class="btn light remove-color" onclick="this.parentElement.remove()">حذف</button>`;wrap.appendChild(row);}
+function parseEditorColors(){return [...document.querySelectorAll('#colorRows .color-row')].map(r=>({name:r.querySelector('.color-name')?.value.trim()||'',hex:(r.querySelector('.color-hex')?.value.trim()||r.querySelector('.color-picker')?.value||'#d946ef').toUpperCase()})).filter(c=>/^#[0-9A-F]{6}$/.test(c.hex));}
+function parseFreeSizes(v){return String(v||'').split(/[\n,،]+/).map(x=>x.trim()).filter(Boolean);}
+async function saveProductEditor(){
+  const sb=window.eloraSupabase;if(!sb)return;
+  if(!requirePermission(editingProductId?'products.edit':'products.add'))return;
+  const name=qs('peName').value.trim();if(!name){qs('productEditorResult').className='bulk-result err';qs('productEditorResult').textContent='اكتبي اسم المنتج أولاً.';return;}
+  let variants=[];const raw=qs('peVariants').value.trim();if(raw){try{variants=JSON.parse(raw);if(!Array.isArray(variants))throw new Error('المتغيرات يجب أن تكون Array');}catch(e){qs('productEditorResult').className='bulk-result err';qs('productEditorResult').textContent='صيغة المتغيرات غير صحيحة.';return;}}
+  const color_options=parseEditorColors(), sizes=parseFreeSizes(qs('peSizes').value);
+  const row={name,description:qs('peDescription').value.trim()||null,category:qs('peCategory').value.trim()||null,price:Number(qs('pePrice').value||0),old_price:Number(qs('peOldPrice').value||0)||null,wholesale_price:Number(qs('peWholesale').value||0)||null,stock:parseInt(qs('peStock').value||0,10)||0,image:qs('peImage').value.trim()||null,code:qs('peCode').value.trim()||null,colors:color_options.map(c=>c.name||c.hex),color_options,sizes,variants,active:true};
+  if(editingProductId)row.id=editingProductId;
+  qs('saveProductBtn').disabled=true;try{const r=await sb.from('products').upsert(row,{onConflict:'id'});if(r.error)throw r.error;qs('productEditorResult').className='bulk-result ok';qs('productEditorResult').textContent='تم حفظ المنتج بنجاح.';await loadData();setTimeout(closeProductEditor,500);}catch(e){qs('productEditorResult').className='bulk-result err';qs('productEditorResult').textContent='تعذر حفظ المنتج: '+(e.message||'خطأ غير معروف');}finally{qs('saveProductBtn').disabled=false;}
+}
+
+function normalizeProductRowV2(r){const colors=splitOptional(getRowValueV2(r,['الألوان','الالوان','ألوان','الوان','colors','color']));const sizes=splitOptional(getRowValueV2(r,['المقاسات','المقاس','مقاسات','sizes','size']));const variantsRaw=getRowValueV2(r,['الخيارات','المتغيرات','variants']);let color_options=[];const colorHexRaw=getRowValueV2(r,['ألوان HEX','color_options','color_hex']);if(colorHexRaw){try{const parsed=typeof colorHexRaw==='string'?JSON.parse(colorHexRaw):colorHexRaw;if(Array.isArray(parsed))color_options=parsed;}catch(e){}}if(!color_options.length)color_options=colors.map(c=>({name:c,hex:'#D946EF'}));return {name:String(getRowValueV2(r,['اسم المنتج','الاسم','name','product_name'])).trim(),description:String(getRowValueV2(r,['الوصف','وصف','description'])).trim()||null,category:String(getRowValueV2(r,['الصنف','القسم','category','section'])).trim()||null,price:Number(getRowValueV2(r,['سعر البيع','السعر','price','sale_price'])||0),old_price:Number(getRowValueV2(r,['السعر القديم','old_price','oldPrice'])||0)||null,wholesale_price:Number(getRowValueV2(r,['سعر الجملة','wholesale_price','wholesalePrice'])||0)||null,code:String(getRowValueV2(r,['كود المنتج','الكود','code','product_code'])).trim()||null,stock:parseInt(getRowValueV2(r,['المخزون','الكمية','stock','inventory'])||0,10)||0,discount:Number(getRowValueV2(r,['الخصم','discount'])||0)||0,featured:['1','true','yes','نعم','مميز'].includes(String(getRowValueV2(r,['مميز','featured'])).toLowerCase()),active:!['0','false','no','لا','غير فعال'].includes(String(getRowValueV2(r,['نشط','فعال','active'])).toLowerCase()),image:String(getRowValueV2(r,['الصورة','رابط الصورة','image','image_url'])).trim()||null,colors:colors.length?colors:null,sizes:sizes.length?sizes:null,variants:variantsRaw?variantsRaw:null,color_options:color_options.length?color_options:null}}
+async function previewBulkImportV2(){const input=qs('bulkProductsFile'),preview=qs('bulkPreview'),btn=qs('bulkImportBtn');if(!input?.files?.[0]){preview.textContent='لم يتم اختيار ملف بعد.';btn.disabled=true;return}try{const data=await input.files[0].arrayBuffer();const wb=XLSX.read(data,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{defval:''});bulkRows=rows.map(normalizeProductRowV2).filter(r=>r.name||r.code);preview.innerHTML=`تم العثور على <b>${bulkRows.length.toLocaleString('ar-EG')}</b> منتج. الألوان والمقاسات اختيارية، ويمكن تركها فارغة.`;btn.disabled=!bulkRows.length}catch(e){preview.textContent='تعذر قراءة الملف: '+e.message;btn.disabled=true}}
+async function runBulkImportV2(){if(!requirePermission('products.import'))return;const sb=window.eloraSupabase,btn=qs('bulkImportBtn'),result=qs('bulkResult');if(!sb||!bulkRows.length)return;btn.disabled=true;let ok=0;try{for(let i=0;i<bulkRows.length;i+=250){const batch=bulkRows.slice(i,i+250);let r=await sb.from('products').upsert(batch,{onConflict:'code',ignoreDuplicates:false});if(r.error)throw r.error;ok+=batch.length;const pct=Math.round(ok/bulkRows.length*100);qs('bulkProgress').hidden=false;qs('bulkProgressBar').style.width=pct+'%';qs('bulkProgressText').textContent=pct+'%'}result.className='bulk-result ok';result.textContent=`تم استيراد ${ok.toLocaleString('ar-EG')} منتج بنجاح.`;await loadData()}catch(e){result.className='bulk-result err';result.textContent=`توقف الاستيراد بعد ${ok.toLocaleString('ar-EG')} منتج: ${e.message}`}finally{btn.disabled=false}}
+function downloadArabicTemplate(){const rows=[{'كود المنتج':'EL001','اسم المنتج':'اسم المنتج','الوصف':'وصف اختياري','الصنف':'إكسسوارات','سعر البيع':250,'السعر القديم':300,'سعر الجملة':150,'المخزون':20,'الخصم':0,'مميز':'نعم','نشط':'نعم','الألوان':'أسود، أبيض','ألوان HEX':'[{"name":"أسود","hex":"#000000"},{"name":"أبيض","hex":"#FFFFFF"}]','المقاسات':'Oversize، Free Size، S، M، L','الخيارات':'','الصورة':'EL001.jpg'}];const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'المنتجات');XLSX.writeFile(wb,'نموذج_منتجات_Elora_بالعربي.xlsx')}
+
+</script>
+</body>
+</html>
