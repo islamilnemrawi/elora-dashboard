@@ -3,7 +3,8 @@ name: Build Elora Dashboard APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   build:
@@ -13,7 +14,7 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -22,26 +23,85 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-          cache-disabled: true
-
-      - name: Verify Android project structure
+      - name: Locate Android project
+        shell: bash
         run: |
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          echo 'Android project structure OK'
+          set -e
 
-      - name: Build Debug APK
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
+          echo "Searching for settings.gradle..."
+
+          PROJECT_DIR="$(find . -type f -name "settings.gradle" -print -quit | xargs -r dirname)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: settings.gradle was not found."
+            echo "Repository structure:"
+            find . -maxdepth 4 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+
+          echo "Android project found:"
+          echo "$PROJECT_DIR"
+
+          if [ ! -f "$PROJECT_DIR/build.gradle" ]; then
+            echo "ERROR: build.gradle not found."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERROR: app/build.gradle not found."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml" ]; then
+            echo "ERROR: AndroidManifest.xml not found."
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Show project structure
+        run: |
+          echo "Project directory:"
+          echo "$PROJECT_DIR"
+
+          echo "Files:"
+          find "$PROJECT_DIR" -maxdepth 3 -type f | sort
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -e
+
+          echo "Building Elora Dashboard..."
+
+          gradle --version
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            --no-build-cache \
+            :app:assembleDebug
+
+      - name: Verify APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -e
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK generated successfully:"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Elora-Dashboard-Professional
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
