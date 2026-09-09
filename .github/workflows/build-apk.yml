@@ -23,69 +23,58 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Locate Android project
+      - name: Extract Elora Dashboard
         shell: bash
         run: |
           set -e
 
-          echo "Searching for settings.gradle..."
+          echo "Repository files:"
+          ls -lah
 
-          PROJECT_DIR="$(find . -type f -name "settings.gradle" -print -quit | xargs -r dirname)"
+          ZIP_FILE="Elora_Dashboard_FINAL_PREMIUM.zip"
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: settings.gradle was not found."
-            echo "Repository structure:"
-            find . -maxdepth 4 -type f | sort
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: $ZIP_FILE not found."
             exit 1
           fi
 
-          PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+          echo "Extracting $ZIP_FILE..."
 
-          echo "Android project found:"
-          echo "$PROJECT_DIR"
+          unzip -o "$ZIP_FILE" -d .
 
-          if [ ! -f "$PROJECT_DIR/build.gradle" ]; then
-            echo "ERROR: build.gradle not found."
-            exit 1
-          fi
+          echo "Checking Android project..."
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERROR: app/build.gradle not found."
-            exit 1
-          fi
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
 
-          if [ ! -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml" ]; then
-            echo "ERROR: AndroidManifest.xml not found."
-            exit 1
-          fi
+          echo "Android project found successfully."
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+          cache-disabled: true
 
       - name: Show project structure
         run: |
-          echo "Project directory:"
-          echo "$PROJECT_DIR"
-
-          echo "Files:"
-          find "$PROJECT_DIR" -maxdepth 3 -type f | sort
+          echo "Project structure:"
+          find . -maxdepth 4 -type f | sort
 
       - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
-          echo "Building Elora Dashboard..."
-
-          gradle --version
+          echo "Building Elora Dashboard APK..."
 
           gradle \
             --no-daemon \
-            --stacktrace \
             --no-build-cache \
+            --stacktrace \
             :app:assembleDebug
 
       - name: Verify APK
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
@@ -96,12 +85,15 @@ jobs:
             exit 1
           fi
 
-          echo "APK generated successfully:"
+          echo "======================================"
+          echo "APK BUILD SUCCESSFUL"
+          echo "======================================"
+
           ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Elora-Dashboard-Professional
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
