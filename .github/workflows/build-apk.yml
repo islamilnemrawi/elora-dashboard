@@ -11,32 +11,43 @@ permissions:
 
 jobs:
   build:
+    name: Build APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
+
+      # 1) تحميل ملفات GitHub
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find Elora source ZIP
+      # 2) البحث عن ZIP الخاص بـ Elora
+      - name: Locate Elora source ZIP
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP_FILE="$(find . -maxdepth 3 -type f \
-            \( -iname 'Elora_Dashboard*.zip' -o -iname 'Elora-Dashboard*.zip' \) \
+          ZIP_FILE="$(find . -type f \
+            \
+              -iname 'Elora_Dashboard*.zip' \
+              -o -iname 'Elora-Dashboard*.zip' \
+            \
             | head -n 1)"
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Elora Dashboard ZIP not found."
-            echo "Files in repository:"
-            find . -maxdepth 3 -type f | sort
+            echo "ERROR: Elora Dashboard ZIP was not found."
+            echo
+            echo "Repository files:"
+            find . -maxdepth 4 -type f | sort
             exit 1
           fi
 
-          echo "SOURCE_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
-          echo "Found: $ZIP_FILE"
+          echo "Found source:"
+          echo "$ZIP_FILE"
 
+          echo "SOURCE_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      # 3) فك ZIP
       - name: Extract Android project
         shell: bash
         run: |
@@ -47,143 +58,51 @@ jobs:
 
           unzip -q "$SOURCE_ZIP" -d android-project
 
-          echo "Extracted files:"
-          find android-project -maxdepth 4 -type f | sort | head -200
+          echo "Extracted project:"
+          find android-project -maxdepth 5 -type f | sort | head -300
 
-      - name: Locate Gradle project
+      # 4) تحديد مكان مشروع Android الحقيقي
+      - name: Locate Android project
         shell: bash
         run: |
           set -euo pipefail
 
-          PROJECT_DIR="$(find android-project -type f \
-            \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
-            -print -quit)"
+          SETTINGS_FILE="$(
+            find android-project -type f \
+              \
+                -name 'settings.gradle' \
+                -o -name 'settings.gradle.kts' \
+              \
+              -print -quit
+          )"
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: settings.gradle not found."
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: settings.gradle or settings.gradle.kts was not found."
+
+            echo
+            echo "Searching for Gradle files:"
+            find android-project -type f \
+              \
+                -name '*.gradle' \
+                -o -name '*.gradle.kts' \
+              \
+              | sort
+
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$PROJECT_DIR")"
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
+          echo "Android project directory:"
+          echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Android project: $PROJECT_DIR"
 
+      # 5) Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Verify Android project
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -euo pipefail
-
-          echo "Checking Android project..."
-
-          test -f settings.gradle || \
-          test -f settings.gradle.kts
-
-          test -f app/build.gradle || \
-          test -f app/build.gradle.kts
-
-          test -f app/src/main/AndroidManifest.xml
-
-          echo "Android project verified successfully."
-
-      - name: Validate AndroidManifest.xml
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-
-          path = "app/src/main/AndroidManifest.xml"
-          ET.parse(path)
-
-          print("AndroidManifest.xml: VALID")
-          PY
-
-      - name: Prepare Gradle
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -euo pipefail
-
-          if [ ! -f gradlew ]; then
-            echo "Gradle wrapper not found."
-            exit 1
-          fi
-
-          chmod +x gradlew
-
-          ./gradlew --version
-
-      - name: Build Debug APK
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -euo pipefail
-
-          ./gradlew clean assembleDebug \
-            --no-daemon \
-            --stacktrace
-
-      - name: Find generated APK
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -euo pipefail
-
-          APK="$(find app/build/outputs/apk \
-            -type f \
-            -name '*.apk' \
-            | head -n 1)"
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-
-          echo "Generated APK:"
-          ls -lh "$APK"
-
-          mkdir -p "$GITHUB_WORKSPACE/release"
-
-          cp "$APK" \
-            "$GITHUB_WORKSPACE/release/Elora-Dashboard-v1.9.3.apk"
-
-      - name: Verify final APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          test -f release/Elora-Dashboard-v1.9.3.apk
-
-          echo "FINAL APK:"
-          ls -lh release/Elora-Dashboard-v1.9.3.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Elora-Dashboard-v1.9.3
-          path: release/Elora-Dashboard-v1.9.3.apk
-          if-no-files-found: error
-          retention-days: 14
+      # 6) Android SDK
