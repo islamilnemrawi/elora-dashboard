@@ -3,14 +3,16 @@ name: Build Elora Dashboard APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -24,27 +26,41 @@ jobs:
 
       - name: Accept Android licenses
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
-      - name: Install Android SDK 35
+      - name: Install Android SDK
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.9'
 
-      - name: Build Elora Dashboard
+      - name: Check project
         run: |
-          gradle --no-daemon --stacktrace assembleDebug
+          echo "=== Project files ==="
+          find . -maxdepth 3 -type f | sort | head -200
+          echo "=== Gradle files ==="
+          ls -la
+          ls -la app
+
+      - name: Build APK
+        run: |
+          gradle --version
+          gradle --no-daemon --stacktrace --info assembleDebug
 
       - name: Verify APK
         run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
           test -s app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Elora-Dashboard-debug
+          name: Elora-Dashboard-v1.8.1
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
