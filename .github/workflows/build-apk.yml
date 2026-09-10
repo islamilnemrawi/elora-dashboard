@@ -17,22 +17,38 @@ concurrency:
 
 jobs:
   build:
-    name: Build Elora Dashboard
+    name: Build Elora Dashboard APK
     runs-on: ubuntu-latest
 
     steps:
+
+      # ==========================================
+      # 1. تحميل المشروع
+      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # ==========================================
+      # 2. إعداد Java 17
+      # ==========================================
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+
+      # ==========================================
+      # 3. إعداد Android SDK
+      # ==========================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+
+      # ==========================================
+      # 4. تثبيت Android SDK 35
+      # ==========================================
       - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses || true
@@ -42,61 +58,130 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Setup Gradle
+
+      # ==========================================
+      # 5. إعداد Gradle 8.7
+      # ==========================================
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
           cache-disabled: true
 
-      - name: Find Android project
+
+      # ==========================================
+      # 6. فك ZIP الخاص بالداشبورد
+      # ==========================================
+      - name: Extract Elora Dashboard
         shell: bash
         run: |
-          echo "Searching for Gradle project..."
+          set -e
 
-          SETTINGS_FILE=$(find . \
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No ZIP file found."
+            exit 1
+          fi
+
+          echo "ZIP found:"
+          echo "$ZIP_FILE"
+
+          mkdir -p android-project
+
+          unzip -q "$ZIP_FILE" -d android-project
+
+          echo ""
+          echo "Extracted project:"
+          find android-project -maxdepth 4 -type f | sort | head -300
+
+
+      # ==========================================
+      # 7. البحث عن مشروع Android
+      # ==========================================
+      - name: Locate Android project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching for settings.gradle..."
+
+          SETTINGS_FILE=$(find android-project \
             -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -not -path "./.git/*" \
+            \( \
+              -name "settings.gradle" \
+              -o \
+              -name "settings.gradle.kts" \
+            \) \
             | head -n 1)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: settings.gradle was not found."
-            echo "Project files:"
-            find . -maxdepth 4 -type f | sort
+            echo ""
+            echo "ERROR: Android Gradle project was not found."
+            echo ""
+            echo "Extracted files:"
+            find android-project -maxdepth 6 -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
-          echo "Gradle settings found:"
+          echo ""
+          echo "=========================================="
+          echo "Android project found"
+          echo "=========================================="
+          echo "Settings:"
           echo "$SETTINGS_FILE"
-
-          echo "Android project directory:"
+          echo ""
+          echo "Project directory:"
           echo "$PROJECT_DIR"
+          echo "=========================================="
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Show project structure
-        run: |
-          echo "Building from:"
-          pwd
-          echo "$PROJECT_DIR"
 
-          echo "Project contents:"
+      # ==========================================
+      # 8. عرض ملفات المشروع
+      # ==========================================
+      - name: Verify project structure
+        shell: bash
+        run: |
+          set -e
+
+          echo "Project:"
           ls -lah "$PROJECT_DIR"
 
+          echo ""
           echo "Gradle files:"
           find "$PROJECT_DIR" \
-            -maxdepth 2 \
+            -maxdepth 3 \
             -type f \
-            \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            \( \
+              -name "settings.gradle" \
+              -o \
+              -name "settings.gradle.kts" \
+              -o \
+              -name "build.gradle" \
+              -o \
+              -name "build.gradle.kts" \
+            \) \
             -print
 
+
+      # ==========================================
+      # 9. تنظيف المشروع
+      # ==========================================
       - name: Clean project
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          gradle --no-daemon clean
+          gradle \
+            --no-daemon \
+            clean
 
+
+      # ==========================================
+      # 10. بناء APK
+      # ==========================================
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -106,25 +191,54 @@ jobs:
             --warning-mode all \
             :app:assembleDebug
 
+
+      # ==========================================
+      # 11. التأكد من إنشاء APK
+      # ==========================================
       - name: Verify APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          test -f app/build/outputs/apk/debug/app-debug.apk
+          set -e
 
-          echo "APK successfully created:"
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
+          APK="app/build/outputs/apk/debug/app-debug.apk"
 
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not created."
+            exit 1
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo "APK BUILD SUCCESSFUL"
+          echo "=========================================="
+
+          ls -lh "$APK"
+
+          echo "=========================================="
+
+
+      # ==========================================
+      # 12. تجهيز الملف باسم احترافي
+      # ==========================================
       - name: Prepare APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
+          set -e
+
           mkdir -p release
 
           cp \
             app/build/outputs/apk/debug/app-debug.apk \
             release/Elora-Dashboard-v1.3.0-debug.apk
 
+          echo ""
+          echo "Release file:"
           ls -lh release/
 
+
+      # ==========================================
+      # 13. رفع APK إلى GitHub
+      # ==========================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
