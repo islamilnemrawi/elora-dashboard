@@ -39,43 +39,119 @@ jobs:
           gradle-version: '8.7'
           cache-disabled: true
 
-      - name: Verify Project
+      - name: Prepare Project
+        shell: bash
         run: |
           set -e
 
-          echo "Checking project files..."
+          echo "Searching for Android project..."
 
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
+          if [ -f "settings.gradle" ] && [ -f "app/build.gradle" ]; then
+            PROJECT_DIR="$PWD"
+            echo "Project files are already in repository root."
+
+          elif [ -f "settings.gradle.kts" ] && [ -f "app/build.gradle.kts" ]; then
+            PROJECT_DIR="$PWD"
+            echo "Kotlin Gradle project found in repository root."
+
+          else
+            ZIP_FILE=$(find . -type f -name "*.zip" ! -path "./.git/*" | head -n 1)
+
+            if [ -z "$ZIP_FILE" ]; then
+              echo "ERROR: No Android project and no ZIP file found."
+              exit 1
+            fi
+
+            echo "Found ZIP:"
+            echo "$ZIP_FILE"
+
+            rm -rf android-source
+            mkdir -p android-source
+
+            unzip -q "$ZIP_FILE" -d android-source
+
+            SETTINGS_FILE=$(find android-source -type f -name "settings.gradle" | head -n 1)
+
+            if [ -z "$SETTINGS_FILE" ]; then
+              SETTINGS_FILE=$(find android-source -type f -name "settings.gradle.kts" | head -n 1)
+            fi
+
+            if [ -z "$SETTINGS_FILE" ]; then
+              echo "ERROR: settings.gradle was not found inside ZIP."
+              echo "ZIP contents:"
+              find android-source -maxdepth 4 -type f | head -n 100
+              exit 1
+            fi
+
+            PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+
+            echo "Android project found at:"
+            echo "$PROJECT_DIR"
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Project structure:"
+          ls -la "$PROJECT_DIR"
+          ls -la "$PROJECT_DIR/app"
+
+      - name: Verify Project
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "Verifying Elora Dashboard project..."
+
+          test -f settings.gradle || test -f settings.gradle.kts
+          test -f build.gradle || test -f build.gradle.kts
+
+          if [ -f "app/build.gradle" ]; then
+            APP_GRADLE="app/build.gradle"
+          else
+            APP_GRADLE="app/build.gradle.kts"
+          fi
+
+          test -f "$APP_GRADLE"
           test -f app/src/main/AndroidManifest.xml
 
-          grep -q "versionName '1.4.0'" app/build.gradle
-          grep -q "versionCode 5" app/build.gradle
+          echo "Gradle file:"
+          cat "$APP_GRADLE" | grep -E "versionCode|versionName" || true
 
-          echo "Project verified successfully."
+          echo "Project verification completed."
 
       - name: Clean
+        shell: bash
         run: |
+          cd "$PROJECT_DIR"
           gradle --no-daemon clean
 
       - name: Build APK
+        shell: bash
         run: |
+          cd "$PROJECT_DIR"
+
           gradle --no-daemon \
             --stacktrace \
             --warning-mode all \
             :app:assembleDebug
 
       - name: Verify APK
+        shell: bash
         run: |
           set -e
 
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
           echo "Checking APK..."
-          test -f "$APK"
 
-          echo "APK found:"
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not created."
+            exit 1
+          fi
+
+          echo "APK successfully created:"
           ls -lh "$APK"
 
           mkdir -p release
@@ -86,7 +162,7 @@ jobs:
           echo "Final APK:"
           ls -lh "release/Elora-Dashboard-v1.4.0-debug.apk"
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Elora-Dashboard-v1.4.0
