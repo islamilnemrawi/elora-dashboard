@@ -17,10 +17,8 @@ jobs:
     timeout-minutes: 25
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
-
 
       - name: Locate ZIP
         shell: bash
@@ -31,11 +29,7 @@ jobs:
           ls -lah
 
           mapfile -t ZIPS < <(
-            find . \
-              -maxdepth 2 \
-              -type f \
-              -iname "*.zip" \
-              -print
+            find . -maxdepth 2 -type f -iname "*.zip" -print
           )
 
           if [ "${#ZIPS[@]}" -eq 0 ]; then
@@ -51,23 +45,16 @@ jobs:
 
           ZIP_FILE="${ZIPS[0]}"
 
-          echo "Using:"
+          echo "Using ZIP:"
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-
 
       - name: Validate ZIP
         shell: bash
         run: |
           set -Eeuo pipefail
-
-          echo "Testing ZIP integrity..."
-
           unzip -t "$ZIP_FILE"
-
-          echo "ZIP integrity: OK"
-
 
       - name: Extract Dashboard
         shell: bash
@@ -79,15 +66,8 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d extracted
 
-          echo "Dashboard extracted successfully."
-
-          find extracted \
-            -maxdepth 4 \
-            -type f \
-            -print \
-            | sort \
-            | head -300
-
+          echo "Extracted files:"
+          find extracted -maxdepth 4 -type f -print | sort | head -300
 
       - name: Detect Android Project
         shell: bash
@@ -95,24 +75,15 @@ jobs:
           set -Eeuo pipefail
 
           SETTINGS_FILE="$(
-            find extracted \
-              -type f \
-              \( \
-                -name "settings.gradle" \
-                -o \
-                -name "settings.gradle.kts" \
-              \) \
-              -print \
-              | head -n 1
+            find extracted -type f \
+              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              -print | head -n 1
           )"
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo "::error::settings.gradle was not found."
 
-            find extracted \
-              -maxdepth 6 \
-              -type f \
-              -print
+            find extracted -maxdepth 6 -type f -print
 
             exit 1
           fi
@@ -123,7 +94,6 @@ jobs:
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
 
       - name: Verify Android Project
         shell: bash
@@ -147,9 +117,6 @@ jobs:
             exit 1
           fi
 
-          echo "Android project verification: PASSED"
-
-
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -157,10 +124,8 @@ jobs:
           java-version: "17"
           cache: gradle
 
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
 
       - name: Install Android SDK
         shell: bash
@@ -174,14 +139,10 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Android SDK: READY"
-
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
-
 
       - name: Verify Build Environment
         shell: bash
@@ -191,20 +152,14 @@ jobs:
           echo "Java:"
           java -version
 
-          echo ""
           echo "Gradle:"
           gradle --version
 
-
-      - name: Build Test APK
+      - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -Eeuo pipefail
-
-          echo "=========================================="
-          echo " ELORA DASHBOARD TEST BUILD"
-          echo "=========================================="
 
           gradle \
             --no-daemon \
@@ -212,25 +167,16 @@ jobs:
             --console=plain \
             assembleDebug
 
-
       - name: Locate APK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "Searching for APK..."
-
-          find "$PROJECT_DIR" \
-            -type f \
-            -name "*.apk" \
-            -print
-
           APK_FILE="$(
             find "$PROJECT_DIR" \
               -type f \
               -name "*.apk" \
-              -print \
-              | head -n 1
+              -print | head -n 1
           )"
 
           if [ -z "$APK_FILE" ]; then
@@ -241,17 +187,15 @@ jobs:
           mkdir -p release
 
           cp "$APK_FILE" \
-            release/Elora_Dashboard_TEST.apk
+            release/Elora_Dashboard_DEBUG.apk
 
-          echo ""
-          echo "APK generated successfully:"
-          ls -lh release/Elora_Dashboard_TEST.apk
+          echo "APK generated:"
+          ls -lh release/Elora_Dashboard_DEBUG.apk
 
-
-      - name: Upload Test APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: Elora-Dashboard-TEST-APK
-          path: release/Elora_Dashboard_TEST.apk
+          name: Elora-Dashboard-DEBUG-APK
+          path: release/Elora_Dashboard_DEBUG.apk
           if-no-files-found: error
           retention-days: 7
