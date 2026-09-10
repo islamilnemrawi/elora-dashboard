@@ -12,97 +12,64 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show repository
-        run: |
-          echo "Repository files:"
-          find . -maxdepth 3 -type f | sort | head -300
-
-      - name: Prepare Android project
+      - name: Find Elora ZIP
         shell: bash
         run: |
           set -e
 
-          if [ -f "gradlew" ]; then
-            echo "Android project found in repository root."
+          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -1)
 
-          else
-            ZIP_FILE=$(find . -maxdepth 2 -type f \
-              \( -iname "*.zip" \) \
-              | head -1)
-
-            if [ -z "$ZIP_FILE" ]; then
-              echo "ERROR: No Android project and no ZIP file found."
-              exit 1
-            fi
-
-            echo "Found ZIP: $ZIP_FILE"
-
-            mkdir -p extracted
-            unzip -q "$ZIP_FILE" -d extracted
-
-            GRADLEW=$(find extracted -type f -name "gradlew" | head -1)
-
-            if [ -z "$GRADLEW" ]; then
-              echo "ERROR: gradlew was not found inside the ZIP."
-              find extracted -maxdepth 4 -type f | sort | head -300
-              exit 1
-            fi
-
-            PROJECT_DIR=$(dirname "$GRADLEW")
-
-            echo "Android project directory:"
-            echo "$PROJECT_DIR"
-
-            cp -a "$PROJECT_DIR"/. ./ 
-
-            chmod +x gradlew
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Elora ZIP file was not found."
+            exit 1
           fi
 
-      - name: Validate project
+          echo "Found ZIP:"
+          echo "$ZIP_FILE"
+
+          echo "ZIP contents:"
+          unzip -l "$ZIP_FILE" | head -80
+
+          mkdir -p extracted
+          unzip -q "$ZIP_FILE" -d extracted
+
+      - name: Locate Android project
+        shell: bash
         run: |
           set -e
 
-          echo "Checking project..."
-          test -f gradlew
-          test -d app
-          test -f app/build.gradle || test -f app/build.gradle.kts
+          PROJECT_DIR=$(find extracted -type f -name "settings.gradle" -o -name "settings.gradle.kts" | head -1)
 
-          chmod +x gradlew
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android settings.gradle was not found."
+            find extracted -maxdepth 5 -type f | sort | head -300
+            exit 1
+          fi
 
-          echo "Project is valid."
+          PROJECT_DIR=$(dirname "$PROJECT_DIR")
 
-      - name: Set up JDK
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Android project:"
+          echo "$PROJECT_DIR"
+
+          echo "Project files:"
+          find "$PROJECT_DIR" -maxdepth 3 -type f | sort | head -200
+
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Grant Gradle permission
-        run: chmod +x gradlew
-
-      - name: Build Debug APK
-        run: |
-          ./gradlew clean assembleDebug --stacktrace
-
-      - name: Find APK
-        run: |
-          echo "APK files:"
-          find app/build/outputs/apk -type f -name "*.apk" -print
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Elora-Dashboard-APK
-          path: app/build/outputs/apk/**/*.apk
-          if-no-files-found: error
+          sdkmanager "platform-tools"
+          sdkmanager "
