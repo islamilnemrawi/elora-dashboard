@@ -12,35 +12,30 @@ permissions:
 
 jobs:
   build:
-    name: Build, Sign and Verify Elora Dashboard PRO
+    name: Build Sign Verify Elora Dashboard PRO
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
 
-      # ==========================================
-      # 1. Checkout
-      # ==========================================
       - name: Checkout
         uses: actions/checkout@v6
 
 
-      # ==========================================
-      # 2. Find and extract PRO
-      # ==========================================
-      - name: Find and extract Elora Dashboard PRO
+      - name: Find and extract PRO
         shell: bash
         run: |
           set -euo pipefail
 
           echo "Searching for Elora Dashboard PRO ZIP..."
 
-          ZIP_FILE="$(find . -maxdepth 5 -type f \
-            -iname 'Elora_Dashboard*.zip' \
-            | head -n 1)"
+          ZIP_FILE=$(find . -maxdepth 5 -type f -name 'Elora_Dashboard*.zip' | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: Elora Dashboard PRO ZIP was not found."
+            echo ""
+            echo "ZIP files found:"
+            find . -maxdepth 5 -type f -name '*.zip' -print
             exit 1
           fi
 
@@ -52,33 +47,40 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d android-project
 
-          SETTINGS_FILE="$(
-            find android-project -type f \
-              -name 'settings.gradle' -o -name 'settings.gradle.kts' \
-              | head -n 1
-          )"
+          echo ""
+          echo "Searching for Android project..."
+
+          SETTINGS_FILE=$(find android-project -type f -name 'settings.gradle' | head -n 1)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: settings.gradle was not found."
+            SETTINGS_FILE=$(find android-project -type f -name 'settings.gradle.kts' | head -n 1)
+          fi
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Android settings file was not found."
+            echo ""
+            echo "Extracted files:"
+            find android-project -maxdepth 6 -type f -print
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
           echo "PROJECT_DIR=$PROJECT_DIR"
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERROR: app/build.gradle was not found."
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERROR: app build.gradle was not found."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml" ]; then
+            echo "ERROR: AndroidManifest.xml was not found."
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
 
-      # ==========================================
-      # 3. Java
-      # ==========================================
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -87,17 +89,11 @@ jobs:
           cache: gradle
 
 
-      # ==========================================
-      # 4. Android SDK
-      # ==========================================
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
 
-      # ==========================================
-      # 5. Android SDK packages
-      # ==========================================
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         shell: bash
         run: |
           set -euo pipefail
@@ -110,18 +106,12 @@ jobs:
             "build-tools;35.0.0"
 
 
-      # ==========================================
-      # 6. Gradle
-      # ==========================================
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.9'
 
 
-      # ==========================================
-      # 7. Prepare keystore
-      # ==========================================
       - name: Prepare release keystore
         shell: bash
         env:
@@ -130,25 +120,23 @@ jobs:
           set -euo pipefail
 
           if [ -z "$KEYSTORE_B64" ]; then
-            echo "ERROR: ELORA_KEYSTORE_BASE64 is missing."
+            echo "ERROR: ELORA_KEYSTORE_BASE64 secret is missing."
             exit 1
           fi
 
-          echo "$KEYSTORE_B64" | base64 --decode \
-            > "$RUNNER_TEMP/elora-release.keystore"
+          echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/elora-release.keystore"
 
-          test -s "$RUNNER_TEMP/elora-release.keystore"
+          if [ ! -s "$RUNNER_TEMP/elora-release.keystore" ]; then
+            echo "ERROR: Keystore is empty."
+            exit 1
+          fi
 
-          echo "ELORA_KEYSTORE_FILE=$RUNNER_TEMP/elora-release.keystore" \
-            >> "$GITHUB_ENV"
+          echo "ELORA_KEYSTORE_FILE=$RUNNER_TEMP/elora-release.keystore" >> "$GITHUB_ENV"
 
-          echo "Keystore prepared."
+          echo "Release keystore prepared."
 
 
-      # ==========================================
-      # 8. Build PRO
-      # ==========================================
-      - name: Build Elora Dashboard PRO
+      - name: Build Release APK
         shell: bash
         env:
           ELORA_KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
@@ -159,50 +147,31 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "Building Android project..."
+          echo "Building Elora Dashboard PRO..."
 
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            clean \
-            assembleRelease
+          gradle --no-daemon --stacktrace clean assembleRelease
 
           echo ""
-          echo "Build finished."
+          echo "Build completed."
 
           echo ""
           echo "Generated APK files:"
-          find . \
-            -type f \
-            -name '*.apk' \
-            -print
+          find . -type f -name '*.apk' -print
 
 
-      # ==========================================
-      # 9. Locate unsigned APK
-      # ==========================================
-      - name: Locate Release APK
+      - name: Locate unsigned APK
         shell: bash
         run: |
           set -euo pipefail
 
-          UNSIGNED_APK="$(
-            find "$PROJECT_DIR" \
-              -type f \
-              -name '*-unsigned.apk' \
-              -path '*/build/outputs/apk/*' \
-              | head -n 1
-          )"
+          UNSIGNED_APK=$(find "$PROJECT_DIR" -type f -name '*-unsigned.apk' | head -n 1)
 
           if [ -z "$UNSIGNED_APK" ]; then
-            echo "ERROR: Unsigned Release APK was not found."
+            echo "ERROR: Unsigned APK was not found."
 
             echo ""
             echo "All APK files:"
-            find "$PROJECT_DIR" \
-              -type f \
-              -name '*.apk' \
-              -print || true
+            find "$PROJECT_DIR" -type f -name '*.apk' -print || true
 
             exit 1
           fi
@@ -210,14 +179,10 @@ jobs:
           echo "Unsigned APK:"
           echo "$UNSIGNED_APK"
 
-          echo "ELORA_UNSIGNED_APK=$UNSIGNED_APK" \
-            >> "$GITHUB_ENV"
+          echo "ELORA_UNSIGNED_APK=$UNSIGNED_APK" >> "$GITHUB_ENV"
 
 
-      # ==========================================
-      # 10. Sign APK
-      # ==========================================
-      - name: Sign Release APK
+      - name: Sign APK
         shell: bash
         env:
           ELORA_KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
@@ -226,9 +191,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          UNSIGNED="$ELORA_UNSIGNED_APK"
-
-          SIGNED="$RUNNER_TEMP/Elora-Dashboard-PRO-signed.apk"
+          SIGNED_APK="$RUNNER_TEMP/Elora-Dashboard-PRO.apk"
 
           echo "Signing APK..."
 
@@ -237,30 +200,27 @@ jobs:
             --ks-key-alias "$ELORA_KEY_ALIAS" \
             --ks-pass "pass:$ELORA_KEYSTORE_PASSWORD" \
             --key-pass "pass:$ELORA_KEY_PASSWORD" \
-            --out "$SIGNED" \
-            "$UNSIGNED"
+            --out "$SIGNED_APK" \
+            "$ELORA_UNSIGNED_APK"
 
-          if [ ! -s "$SIGNED" ]; then
+          if [ ! -s "$SIGNED_APK" ]; then
             echo "ERROR: Signed APK was not created."
             exit 1
           fi
 
+          echo ""
           echo "Signed APK created:"
-          ls -lh "$SIGNED"
+          ls -lh "$SIGNED_APK"
 
-          echo "ELORA_SIGNED_APK=$SIGNED" \
-            >> "$GITHUB_ENV"
+          echo "ELORA_SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
 
 
-      # ==========================================
-      # 11. Verify signed APK
-      # ==========================================
-      - name: Verify APK signature
+      - name: Verify APK
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Verifying signed APK..."
+          echo "Verifying APK signature..."
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
@@ -272,31 +232,11 @@ jobs:
           echo "APK SIGNATURE VERIFIED SUCCESSFULLY"
           echo "=========================================="
 
-          echo ""
-          echo "Signed APK:"
-          echo "$ELORA_SIGNED_APK"
 
-          echo ""
-          echo "Size:"
-          ls -lh "$ELORA_SIGNED_APK"
-
-
-      # ==========================================
-      # 12. Verify package
-      # ==========================================
-      - name: Verify APK package
+      - name: Show APK information
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Checking APK package information..."
-
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            dump badging "$ELORA_SIGNED_APK" \
-            | grep -E \
-              "package:|versionCode=|versionName=" \
-            | head -n 5 || true
-
-
-      # ==========================================
-      # 13. Upload
+          echo "APK:"
+          echo "$ELORA
