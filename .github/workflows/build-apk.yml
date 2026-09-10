@@ -23,7 +23,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract Elora Dashboard
+      - name: Extract Elora Dashboard ZIP
         shell: bash
         run: |
           set -e
@@ -31,15 +31,16 @@ jobs:
           echo "Repository files:"
           ls -lah
 
-          ZIP_FILE="Elora_Dashboard_FINAL_PREMIUM.zip"
+          ZIP_FILE="Elora_Dashboard_FINAL_PREMIUM_SHIPPING_VISUAL_FIXED.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: $ZIP_FILE not found."
+            echo "Available ZIP files:"
+            find . -maxdepth 2 -type f -name "*.zip"
             exit 1
           fi
 
           echo "Extracting $ZIP_FILE..."
-
           unzip -o "$ZIP_FILE" -d .
 
           echo "Checking Android project..."
