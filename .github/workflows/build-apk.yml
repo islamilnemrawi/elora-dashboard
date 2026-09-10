@@ -30,25 +30,24 @@ jobs:
             exit 0
           fi
 
-          ZIP_FILE="$(find . -maxdepth 4 -type f -name '*.zip' -print -quit)"
+          ZIP_FILE="$(find . -maxdepth 5 -type f -name '*.zip' -print -quit)"
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: No Android project or ZIP file was found."
             exit 1
           fi
 
-          echo "Found project ZIP: $ZIP_FILE"
+          echo "Found ZIP: $ZIP_FILE"
 
           rm -rf build-project
           mkdir -p build-project
 
           unzip -q "$ZIP_FILE" -d build-project
 
-          SETTINGS="$(find build-project -type f -name 'settings.gradle' -print -quit)"
-
-          if [ -z "$SETTINGS" ]; then
-            SETTINGS="$(find build-project -type f -name 'settings.gradle.kts' -print -quit)"
-          fi
+          SETTINGS="$(find build-project -type f \( \
+            -name 'settings.gradle' -o \
+            -name 'settings.gradle.kts' \
+          \) -print -quit)"
 
           if [ -z "$SETTINGS" ]; then
             echo "ERROR: settings.gradle was not found."
@@ -69,7 +68,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK 35
+      - name: Install Android SDK
         shell: bash
         run: |
           set -e
@@ -81,7 +80,7 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Setup Gradle 8.7
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
@@ -93,18 +92,42 @@ jobs:
         run: |
           set -e
 
-          if [ -f "app/google-services.json" ]; then
-            mkdir -p app/src/main/assets
+          mkdir -p app/src/main/assets
 
+          # 1. If firebase-config.json already exists, keep it.
+          if [ -f "app/src/main/assets/firebase-config.json" ]; then
+            echo "Firebase config already exists."
+            exit 0
+          fi
+
+          # 2. If google-services.json exists, copy it.
+          if [ -f "app/google-services.json" ]; then
             cp \
               "app/google-services.json" \
               "app/src/main/assets/firebase-config.json"
 
-            echo "Firebase configuration detected."
-          else
-            echo "ERROR: app/google-services.json was not found."
-            exit 1
+            echo "Firebase config copied from google-services.json."
+            exit 0
           fi
+
+          # 3. Search for google-services.json anywhere in the project.
+          FOUND="$(find . -type f -name 'google-services.json' -print -quit)"
+
+          if [ -n "$FOUND" ]; then
+            cp \
+              "$FOUND" \
+              "app/src/main/assets/firebase-config.json"
+
+            echo "Firebase config found at: $FOUND"
+            exit 0
+          fi
+
+          echo "ERROR: Firebase configuration was not found."
+          echo "Expected:"
+          echo "app/src/main/assets/firebase-config.json"
+          echo "or"
+          echo "app/google-services.json"
+          exit 1
 
       - name: Verify Android project
         working-directory: ${{ steps.project.outputs.project_dir }}
@@ -116,8 +139,10 @@ jobs:
           test -f build.gradle || test -f build.gradle.kts
           test -f app/build.gradle || test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/assets/firebase-config.json
 
           echo "Android project verification passed."
+          echo "Firebase configuration verified."
 
       - name: Build Debug APK
         working-directory: ${{ steps.project.outputs.project_dir }}
@@ -132,7 +157,6 @@ jobs:
             --stacktrace
 
       - name: Find APK
-        id: apk
         working-directory: ${{ steps.project.outputs.project_dir }}
         shell: bash
         run: |
@@ -148,7 +172,8 @@ jobs:
             exit 1
           fi
 
-          echo "APK found: $APK"
+          echo "APK found:"
+          echo "$APK"
 
           mkdir -p "$GITHUB_WORKSPACE/release"
 
@@ -156,7 +181,8 @@ jobs:
             "$APK" \
             "$GITHUB_WORKSPACE/release/Elora-Dashboard.apk"
 
-          ls -lh "$GITHUB_WORKSPACE/release/Elora-Dashboard.apk"
+          ls -lh \
+            "$GITHUB_WORKSPACE/release/Elora-Dashboard.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
