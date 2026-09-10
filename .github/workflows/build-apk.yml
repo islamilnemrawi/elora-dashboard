@@ -1,171 +1,108 @@
-name: Build Elora Dashboard APK v1.4.0
+name: Build Elora Dashboard APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-      - master
-
-permissions:
-  contents: read
 
 jobs:
   build:
-    name: Build Elora Dashboard APK
+    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK
+      - name: Show repository
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          echo "Repository files:"
+          find . -maxdepth 3 -type f | sort | head -300
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-          cache-disabled: true
-
-      - name: Prepare Project
+      - name: Prepare Android project
         shell: bash
         run: |
           set -e
 
-          echo "Searching for Android project..."
-
-          if [ -f "settings.gradle" ] && [ -f "app/build.gradle" ]; then
-            PROJECT_DIR="$PWD"
-            echo "Project files are already in repository root."
-
-          elif [ -f "settings.gradle.kts" ] && [ -f "app/build.gradle.kts" ]; then
-            PROJECT_DIR="$PWD"
-            echo "Kotlin Gradle project found in repository root."
+          if [ -f "gradlew" ]; then
+            echo "Android project found in repository root."
 
           else
-            ZIP_FILE=$(find . -type f -name "*.zip" ! -path "./.git/*" | head -n 1)
+            ZIP_FILE=$(find . -maxdepth 2 -type f \
+              \( -iname "*.zip" \) \
+              | head -1)
 
             if [ -z "$ZIP_FILE" ]; then
               echo "ERROR: No Android project and no ZIP file found."
               exit 1
             fi
 
-            echo "Found ZIP:"
-            echo "$ZIP_FILE"
+            echo "Found ZIP: $ZIP_FILE"
 
-            rm -rf android-source
-            mkdir -p android-source
+            mkdir -p extracted
+            unzip -q "$ZIP_FILE" -d extracted
 
-            unzip -q "$ZIP_FILE" -d android-source
+            GRADLEW=$(find extracted -type f -name "gradlew" | head -1)
 
-            SETTINGS_FILE=$(find android-source -type f -name "settings.gradle" | head -n 1)
-
-            if [ -z "$SETTINGS_FILE" ]; then
-              SETTINGS_FILE=$(find android-source -type f -name "settings.gradle.kts" | head -n 1)
-            fi
-
-            if [ -z "$SETTINGS_FILE" ]; then
-              echo "ERROR: settings.gradle was not found inside ZIP."
-              echo "ZIP contents:"
-              find android-source -maxdepth 4 -type f | head -n 100
+            if [ -z "$GRADLEW" ]; then
+              echo "ERROR: gradlew was not found inside the ZIP."
+              find extracted -maxdepth 4 -type f | sort | head -300
               exit 1
             fi
 
-            PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+            PROJECT_DIR=$(dirname "$GRADLEW")
 
-            echo "Android project found at:"
+            echo "Android project directory:"
             echo "$PROJECT_DIR"
+
+            cp -a "$PROJECT_DIR"/. ./ 
+
+            chmod +x gradlew
           fi
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Project structure:"
-          ls -la "$PROJECT_DIR"
-          ls -la "$PROJECT_DIR/app"
-
-      - name: Verify Project
-        shell: bash
+      - name: Validate project
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
+          echo "Checking project..."
+          test -f gradlew
+          test -d app
+          test -f app/build.gradle || test -f app/build.gradle.kts
 
-          echo "Verifying Elora Dashboard project..."
+          chmod +x gradlew
 
-          test -f settings.gradle || test -f settings.gradle.kts
-          test -f build.gradle || test -f build.gradle.kts
+          echo "Project is valid."
 
-          if [ -f "app/build.gradle" ]; then
-            APP_GRADLE="app/build.gradle"
-          else
-            APP_GRADLE="app/build.gradle.kts"
-          fi
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
-          test -f "$APP_GRADLE"
-          test -f app/src/main/AndroidManifest.xml
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-          echo "Gradle file:"
-          cat "$APP_GRADLE" | grep -E "versionCode|versionName" || true
-
-          echo "Project verification completed."
-
-      - name: Clean
-        shell: bash
+      - name: Install Android SDK packages
         run: |
-          cd "$PROJECT_DIR"
-          gradle --no-daemon clean
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Build APK
-        shell: bash
+      - name: Grant Gradle permission
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
         run: |
-          cd "$PROJECT_DIR"
+          ./gradlew clean assembleDebug --stacktrace
 
-          gradle --no-daemon \
-            --stacktrace \
-            --warning-mode all \
-            :app:assembleDebug
-
-      - name: Verify APK
-        shell: bash
+      - name: Find APK
         run: |
-          set -e
-
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-
-          echo "Checking APK..."
-
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not created."
-            exit 1
-          fi
-
-          echo "APK successfully created:"
-          ls -lh "$APK"
-
-          mkdir -p release
-
-          cp "$APK" \
-            "release/Elora-Dashboard-v1.4.0-debug.apk"
-
-          echo "Final APK:"
-          ls -lh "release/Elora-Dashboard-v1.4.0-debug.apk"
+          echo "APK files:"
+          find app/build/outputs/apk -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Elora-Dashboard-v1.4.0
-          path: release/Elora-Dashboard-v1.4.0-debug.apk
+          name: Elora-Dashboard-APK
+          path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
-          retention-days: 30
