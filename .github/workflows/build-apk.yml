@@ -1,4 +1,4 @@
-name: Elora Dashboard - Build APK
+name: Elora Dashboard - Professional APK Build
 
 on:
   workflow_dispatch:
@@ -11,243 +11,254 @@ permissions:
   contents: read
 
 jobs:
-  build-apk:
-    name: Build Elora Dashboard APK
+  build:
+    name: Build Elora Dashboard
     runs-on: ubuntu-latest
 
     steps:
 
-      # --------------------------------------------------
-      # 1. Download repository
-      # --------------------------------------------------
+      # ==========================================
+      # 1 - Checkout
+      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
-      # --------------------------------------------------
-      # 2. Java 17
-      # --------------------------------------------------
+      # ==========================================
+      # 2 - Java 17
+      # ==========================================
       - name: Setup Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
 
-      # --------------------------------------------------
-      # 3. Android SDK
-      # --------------------------------------------------
+      # ==========================================
+      # 3 - Android SDK
+      # ==========================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
 
-      # --------------------------------------------------
-      # 4. Install Android SDK components
-      # --------------------------------------------------
-      - name: Install Android SDK 35
+      # ==========================================
+      # 4 - Android SDK 35
+      # ==========================================
+      - name: Install Android SDK
         shell: bash
         run: |
           set -e
 
-          yes | sdkmanager --licenses > /dev/null || true
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
           sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Android SDK ready."
+          echo "Android SDK 35 installed successfully."
 
 
-      # --------------------------------------------------
-      # 5. Detect Android project
-      # --------------------------------------------------
+      # ==========================================
+      # 5 - Detect / Extract Project
+      # ==========================================
       - name: Prepare Android project
         shell: bash
         run: |
           set -e
 
-          echo "Checking repository..."
+          echo "Checking Android project..."
 
-          PROJECT_DIR=""
+          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
 
-          if [ -f "settings.gradle" ]; then
-            PROJECT_DIR="."
-          elif [ -f "settings.gradle.kts" ]; then
-            PROJECT_DIR="."
-          fi
+            echo "Android project already exists in repository root."
 
-          if [ -z "$PROJECT_DIR" ]; then
+          else
 
             ZIP_FILE="$(find . -maxdepth 3 -type f -name '*.zip' -print -quit)"
 
-            if [ -n "$ZIP_FILE" ]; then
+            if [ -z "$ZIP_FILE" ]; then
+              echo "ERROR: No Android project or ZIP file found."
+              exit 1
+            fi
 
-              echo "Android ZIP detected:"
-              echo "$ZIP_FILE"
+            echo "Found project ZIP:"
+            echo "$ZIP_FILE"
 
-              rm -rf extracted
-              mkdir -p extracted
+            TEMP_DIR=".elora_extract"
 
-              unzip -q "$ZIP_FILE" -d extracted
+            rm -rf "$TEMP_DIR"
+            mkdir -p "$TEMP_DIR"
 
-              if [ -f "extracted/settings.gradle" ]; then
-                PROJECT_DIR="extracted"
-              elif [ -f "extracted/settings.gradle.kts" ]; then
-                PROJECT_DIR="extracted"
-              fi
+            unzip -q "$ZIP_FILE" -d "$TEMP_DIR"
 
-              if [ -z "$PROJECT_DIR" ]; then
+            echo "ZIP extracted."
 
-                PROJECT_DIR="$(
-                  find extracted \
-                    -type f \
-                    -name 'settings.gradle' \
-                    -print \
-                    -quit
-                )"
+            PROJECT_ROOT=""
 
-                if [ -n "$PROJECT_DIR" ]; then
-                  PROJECT_DIR="$(dirname "$PROJECT_DIR")"
-                fi
-              fi
+            if [ -f "$TEMP_DIR/settings.gradle" ]; then
+              PROJECT_ROOT="$TEMP_DIR"
 
-              if [ -z "$PROJECT_DIR" ]; then
+            elif [ -f "$TEMP_DIR/settings.gradle.kts" ]; then
+              PROJECT_ROOT="$TEMP_DIR"
 
-                PROJECT_DIR="$(
-                  find extracted \
-                    -type f \
-                    -name 'settings.gradle.kts' \
-                    -print \
-                    -quit
-                )"
+            else
 
-                if [ -n "$PROJECT_DIR" ]; then
-                  PROJECT_DIR="$(dirname "$PROJECT_DIR")"
-                fi
+              PROJECT_SETTINGS="$(
+                find "$TEMP_DIR" \
+                  -type f \
+                  -name 'settings.gradle' \
+                  -print \
+                  -quit
+              )"
+
+              if [ -n "$PROJECT_SETTINGS" ]; then
+                PROJECT_ROOT="$(dirname "$PROJECT_SETTINGS")"
               fi
 
             fi
+
+            if [ -z "$PROJECT_ROOT" ]; then
+
+              PROJECT_SETTINGS="$(
+                find "$TEMP_DIR" \
+                  -type f \
+                  -name 'settings.gradle.kts' \
+                  -print \
+                  -quit
+              )"
+
+              if [ -n "$PROJECT_SETTINGS" ]; then
+                PROJECT_ROOT="$(dirname "$PROJECT_SETTINGS")"
+              fi
+
+            fi
+
+            if [ -z "$PROJECT_ROOT" ]; then
+              echo "ERROR: settings.gradle was not found."
+              exit 1
+            fi
+
+            echo "Project root:"
+            echo "$PROJECT_ROOT"
+
+            cp -R "$PROJECT_ROOT"/. .
+
+            rm -rf "$TEMP_DIR"
+
+            echo "Android project prepared."
+
           fi
 
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project was not found."
-            echo "Repository contents:"
-            find . -maxdepth 3 -type f -print
-            exit 1
-          fi
-
-
-          echo "Android project:"
-          echo "$PROJECT_DIR"
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-
-      # --------------------------------------------------
-      # 6. Show project structure
-      # --------------------------------------------------
-      - name: Verify project
+      # ==========================================
+      # 6 - Verify Project
+      # ==========================================
+      - name: Verify Android project
         shell: bash
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
+          echo "======================================"
+          echo "ANDROID PROJECT CHECK"
+          echo "======================================"
 
-          echo "Project directory:"
-          pwd
-
-          echo
-          echo "Project files:"
-          ls -la
-
-          if [ ! -f "app/build.gradle" ] && \
-             [ ! -f "app/build.gradle.kts" ]; then
-            echo "ERROR: app module was not found."
+          if [ ! -f "settings.gradle" ] && \
+             [ ! -f "settings.gradle.kts" ]; then
+            echo "ERROR: settings.gradle not found."
             exit 1
           fi
 
-          echo "Android app module detected."
+          if [ ! -f "app/build.gradle" ] && \
+             [ ! -f "app/build.gradle.kts" ]; then
+            echo "ERROR: app module not found."
+            exit 1
+          fi
+
+          echo "settings.gradle: OK"
+          echo "app module: OK"
+
+          echo
+          echo "Project structure:"
+          ls -la
 
 
-      # --------------------------------------------------
-      # 7. Configure Gradle
-      # --------------------------------------------------
-      - name: Setup Gradle
+      # ==========================================
+      # 7 - Setup Gradle
+      # ==========================================
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
 
-      # --------------------------------------------------
-      # 8. Make Gradle wrapper executable
-      # --------------------------------------------------
-      - name: Prepare Gradle wrapper
+      # ==========================================
+      # 8 - Prepare Gradle
+      # ==========================================
+      - name: Prepare Gradle
         shell: bash
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
-
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            echo "Gradle wrapper detected."
+            echo "Gradle Wrapper detected."
           else
-            echo "No Gradle wrapper detected."
-            echo "System Gradle will be used."
+            echo "Gradle Wrapper not included."
+            echo "Using Gradle 8.7."
           fi
 
 
-      # --------------------------------------------------
-      # 9. Clean project
-      # --------------------------------------------------
+      # ==========================================
+      # 9 - Clean
+      # ==========================================
       - name: Clean project
         shell: bash
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
-
           if [ -f "./gradlew" ]; then
-            ./gradlew clean --stacktrace
+            ./gradlew clean --no-daemon
           else
-            gradle clean --stacktrace
+            gradle clean --no-daemon
           fi
 
 
-      # --------------------------------------------------
-      # 10. Build Debug APK
-      # --------------------------------------------------
+      # ==========================================
+      # 10 - Build APK
+      # ==========================================
       - name: Build Debug APK
         shell: bash
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
-
-          echo "Starting APK build..."
+          echo "======================================"
+          echo "BUILDING ELORA DASHBOARD APK"
+          echo "======================================"
 
           if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug --stacktrace --no-daemon
+            ./gradlew assembleDebug \
+              --no-daemon \
+              --stacktrace
           else
-            gradle assembleDebug --stacktrace --no-daemon
+            gradle assembleDebug \
+              --no-daemon \
+              --stacktrace
           fi
 
           echo "APK build completed."
 
 
-      # --------------------------------------------------
-      # 11. Verify APK
-      # --------------------------------------------------
-      - name: Verify APK
+      # ==========================================
+      # 11 - Find APK
+      # ==========================================
+      - name: Verify generated APK
         shell: bash
         run: |
           set -e
 
           APK_FILE="$(
-            find "$PROJECT_DIR" \
+            find . \
               -type f \
               -path '*/build/outputs/apk/*.apk' \
               -print \
@@ -257,8 +268,8 @@ jobs:
           if [ -z "$APK_FILE" ]; then
             echo "ERROR: APK was not generated."
             echo
-            echo "Searching build directory..."
-            find "$PROJECT_DIR" \
+            echo "Build output:"
+            find . \
               -type f \
               -path '*/build/*' \
               -print | head -100
@@ -266,25 +277,25 @@ jobs:
           fi
 
           echo "======================================"
-          echo "APK BUILD SUCCESSFUL"
+          echo "APK SUCCESSFULLY GENERATED"
           echo "======================================"
-          echo
+
           echo "APK:"
           echo "$APK_FILE"
-          echo
+
           ls -lh "$APK_FILE"
 
 
-      # --------------------------------------------------
-      # 12. Rename APK
-      # --------------------------------------------------
-      - name: Prepare APK artifact
+      # ==========================================
+      # 12 - Rename APK
+      # ==========================================
+      - name: Prepare release APK
         shell: bash
         run: |
           set -e
 
           APK_FILE="$(
-            find "$PROJECT_DIR" \
+            find . \
               -type f \
               -path '*/build/outputs/apk/*.apk' \
               -print \
@@ -300,9 +311,9 @@ jobs:
           ls -lh release/Elora-Dashboard.apk
 
 
-      # --------------------------------------------------
-      # 13. Upload APK
-      # --------------------------------------------------
+      # ==========================================
+      # 13 - Upload APK
+      # ==========================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
