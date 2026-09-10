@@ -12,69 +12,88 @@ permissions:
 
 jobs:
   build:
-    name: Build Signed Release APK
+    name: Build Signed Elora Dashboard
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
 
-      # 1) تحميل المشروع
       - name: Checkout
         uses: actions/checkout@v6
 
-      # 2) تجهيز Java 17
-      - name: Set up Java 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
-      # 3) تجهيز Android SDK
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      # 4) تثبيت أدوات Android المطلوبة
-      - name: Install Android SDK
+      - name: Find Elora Dashboard ZIP
         shell: bash
         run: |
           set -euo pipefail
 
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          ZIP_FILE=""
 
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          if [ -f "Elora_Dashboard_v1_9_10_PRO_FUNCTIONAL_FIX.zip" ]; then
+            ZIP_FILE="Elora_Dashboard_v1_9_10_PRO_FUNCTIONAL_FIX.zip"
+          else
+            ZIP_FILE=$(find . -type f \
+              -name "Elora_Dashboard_v1_9_10_PRO_FUNCTIONAL_FIX.zip" \
+              | head -n 1 || true)
+          fi
 
-      # 5) تجهيز Gradle
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.9'
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Elora Dashboard ZIP was not found."
+            echo "Available files:"
+            find . -maxdepth 5 -type f -print
+            exit 1
+          fi
 
-      # 6) البحث عن مشروع Android
+          echo "Using:"
+          echo "$ZIP_FILE"
+
+          echo "ELORA_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Extract Elora Dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf android-project
+          mkdir -p android-project
+
+          unzip -q "$ELORA_ZIP" -d android-project
+
+          echo "Extracted project:"
+          find android-project -maxdepth 5 -type f \
+            \( -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+            -o -name "build.gradle" \
+            -o -name "build.gradle.kts" \
+            -o -name "gradlew" \) \
+            -print
+
       - name: Detect Android Project
         shell: bash
         run: |
           set -euo pipefail
 
-          SETTINGS_FILE=""
-
-          SETTINGS_FILE=$(find . -maxdepth 6 -type f -name "settings.gradle" | head -n 1 || true)
+          SETTINGS_FILE=$(find android-project \
+            -type f \
+            -name "settings.gradle" \
+            | head -n 1 || true)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            SETTINGS_FILE=$(find . -maxdepth 6 -type f -name "settings.gradle.kts" | head -n 1 || true)
+            SETTINGS_FILE=$(find android-project \
+              -type f \
+              -name "settings.gradle.kts" \
+              | head -n 1 || true)
           fi
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Android settings.gradle was not found."
+            echo "ERROR: settings.gradle was not found."
+            echo "Full extracted tree:"
+            find android-project -maxdepth 8 -type f -print
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
-          echo "Android project:"
+          echo "Android project directory:"
           echo "$PROJECT_DIR"
 
           if [ ! -f "$PROJECT_DIR/app/build.gradle" ] &&
@@ -85,7 +104,33 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      # 7) تجهيز ملف التوقيع
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          yes | sdkmanager --licenses \
+            >/dev/null 2>&1 || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
       - name: Prepare Release Keystore
         shell: bash
         env:
@@ -94,7 +139,7 @@ jobs:
           set -euo pipefail
 
           if [ -z "$KEYSTORE_B64" ]; then
-            echo "ERROR: ELORA_KEYSTORE_BASE64 secret is missing."
+            echo "ERROR: ELORA_KEYSTORE_BASE64 is missing."
             exit 1
           fi
 
@@ -102,15 +147,11 @@ jobs:
             | base64 --decode \
             > "$RUNNER_TEMP/elora-release.keystore"
 
-          if [ ! -s "$RUNNER_TEMP/elora-release.keystore" ]; then
-            echo "ERROR: Keystore was not created."
-            exit 1
-          fi
+          test -s "$RUNNER_TEMP/elora-release.keystore"
 
           echo "ELORA_KEYSTORE_FILE=$RUNNER_TEMP/elora-release.keystore" \
             >> "$GITHUB_ENV"
 
-      # 8) بناء Release APK
       - name: Build Release APK
         shell: bash
         run: |
@@ -118,34 +159,32 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "Cleaning project..."
-          gradle --no-daemon clean
+          chmod +x gradlew || true
 
-          echo "Building Release APK..."
+          echo "Building Elora Dashboard..."
+
           gradle \
             --no-daemon \
             --stacktrace \
-            --warning-mode all \
+            clean \
             assembleRelease
 
-          echo "APK files generated:"
+          echo "APK files:"
           find . -type f -name "*.apk" -print
 
-      # 9) التأكد من وجود APK غير موقع
-      - name: Locate Release APK
+      - name: Locate Unsigned APK
         shell: bash
         run: |
           set -euo pipefail
 
-          APK=$(find "$PROJECT_DIR" \
+          UNSIGNED_APK=$(find "$PROJECT_DIR" \
             -type f \
             -name "*-unsigned.apk" \
             | head -n 1 || true)
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: Unsigned Release APK was not found."
+          if [ -z "$UNSIGNED_APK" ]; then
+            echo "ERROR: Unsigned APK was not found."
 
-            echo "All APK files:"
             find "$PROJECT_DIR" \
               -type f \
               -name "*.apk" \
@@ -155,56 +194,38 @@ jobs:
           fi
 
           echo "Unsigned APK:"
-          echo "$APK"
+          echo "$UNSIGNED_APK"
 
-          echo "ELORA_UNSIGNED_APK=$APK" >> "$GITHUB_ENV"
+          echo "ELORA_UNSIGNED_APK=$UNSIGNED_APK" \
+            >> "$GITHUB_ENV"
 
-      # 10) توقيع APK
       - name: Sign Release APK
         shell: bash
         env:
-          ELORA_KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
-          ELORA_KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
-          ELORA_KEY_PASSWORD: ${{ secrets.ELORA_KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ELORA_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-
-          if [ -z "$ELORA_KEYSTORE_PASSWORD" ]; then
-            echo "ERROR: ELORA_KEYSTORE_PASSWORD is missing."
-            exit 1
-          fi
-
-          if [ -z "$ELORA_KEY_ALIAS" ]; then
-            echo "ERROR: ELORA_KEY_ALIAS is missing."
-            exit 1
-          fi
-
-          if [ -z "$ELORA_KEY_PASSWORD" ]; then
-            echo "ERROR: ELORA_KEY_PASSWORD is missing."
-            exit 1
-          fi
 
           SIGNED_APK="$RUNNER_TEMP/Elora-Dashboard-PRO.apk"
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
             --ks "$ELORA_KEYSTORE_FILE" \
-            --ks-key-alias "$ELORA_KEY_ALIAS" \
-            --ks-pass "pass:$ELORA_KEYSTORE_PASSWORD" \
-            --key-pass "pass:$ELORA_KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
             --out "$SIGNED_APK" \
             "$ELORA_UNSIGNED_APK"
 
-          if [ ! -s "$SIGNED_APK" ]; then
-            echo "ERROR: Signed APK was not created."
-            exit 1
-          fi
+          test -s "$SIGNED_APK"
 
-          echo "ELORA_SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
+          echo "ELORA_SIGNED_APK=$SIGNED_APK" \
+            >> "$GITHUB_ENV"
 
           ls -lh "$SIGNED_APK"
 
-      # 11) التحقق من التوقيع
-      - name: Verify APK Signature
+      - name: Verify APK
         shell: bash
         run: |
           set -euo pipefail
@@ -216,18 +237,13 @@ jobs:
 
           echo "APK signature verified successfully."
 
-      # 12) عرض بيانات APK
-      - name: Inspect APK
+      - name: Show APK Information
         shell: bash
         run: |
           set -euo pipefail
 
           echo "Final APK:"
-          echo "$ELORA_SIGNED_APK"
-
           ls -lh "$ELORA_SIGNED_APK"
-
-          echo "APK package information:"
 
           "$ANDROID_HOME/build-tools/35.0.0/aapt" \
             dump badging \
@@ -236,8 +252,7 @@ jobs:
               "package:|versionCode=|versionName=" \
             | head -n 5 || true
 
-      # 13) رفع APK النهائي
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v5
         with:
           name: Elora-Dashboard-PRO-APK
