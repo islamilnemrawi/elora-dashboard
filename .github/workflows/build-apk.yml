@@ -1,363 +1,49 @@
-name: Elora Dashboard - Signed Release APK
+name: Build Elora Dashboard v1.9.8
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-
-permissions:
-  contents: read
 
 jobs:
-  build-release:
-    name: Build, Sign and Verify Elora Dashboard
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------------------------------------------------------
-      # 1) Checkout
-      # ---------------------------------------------------------
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ---------------------------------------------------------
-      # 2) Java
-      # ---------------------------------------------------------
-      - name: Set up Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # ---------------------------------------------------------
-      # 3) Android SDK
-      # ---------------------------------------------------------
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # ---------------------------------------------------------
-      # 4) Find dashboard ZIP
-      # ---------------------------------------------------------
-      - name: Locate Dashboard ZIP
-        shell: bash
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK packages
         run: |
-          set -euo pipefail
+          sdkmanager "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-          ZIP_FILE="$(find . -maxdepth 4 -type f -iname '*.zip' | head -n 1)"
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No Dashboard ZIP found."
-            echo
-            echo "Repository files:"
-            find . -maxdepth 4 -type f | sort
-            exit 1
-          fi
-
-          echo "Dashboard archive:"
-          echo "$ZIP_FILE"
-
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-
-      # ---------------------------------------------------------
-      # 5) Extract
-      # ---------------------------------------------------------
-      - name: Extract Dashboard source
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rm -rf extracted
-          mkdir -p extracted
-
-          unzip -q "$ZIP_FILE" -d extracted
-
-          echo "Extracted project:"
-          find extracted -maxdepth 5 -type f | sort | head -300
-
-      # ---------------------------------------------------------
-      # 6) Detect Android project root
-      # ---------------------------------------------------------
-      - name: Detect Android project
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SETTINGS_FILE="$(find extracted \
-            -type f \
-            \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
-            | head -n 1)"
-
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: settings.gradle / settings.gradle.kts not found."
-            exit 1
-          fi
-
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-
-          echo "Android project root:"
-          echo "$PROJECT_DIR"
-
-          if [ ! -d "$PROJECT_DIR/app" ]; then
-            echo "ERROR: app module was not found."
-            echo
-            echo "Project contents:"
-            find "$PROJECT_DIR" -maxdepth 3 -type d | sort
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      # ---------------------------------------------------------
-      # 7) Install Gradle 8.9
-      # ---------------------------------------------------------
-      - name: Set up Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      # ---------------------------------------------------------
-      # 8) Check project
-      # ---------------------------------------------------------
-      - name: Validate Android project
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_DIR"
-
-          echo "Gradle:"
-          gradle --version
-
-          echo
-          echo "Android module:"
-          find app -maxdepth 3 -type f | sort | head -200
-
-      # ---------------------------------------------------------
-      # 9) Build Release
-      # ---------------------------------------------------------
       - name: Build Release APK
-        shell: bash
+        run: ./gradlew clean assembleRelease --stacktrace
+
+      - name: Find APK
         run: |
-          set -euo pipefail
+          echo "APK files:"
+          find . -type f -name "*.apk" -print
 
-          cd "$PROJECT_DIR"
-
-          gradle \
-            :app:assembleRelease \
-            --no-daemon \
-            --stacktrace \
-            --warning-mode all
-
-      # ---------------------------------------------------------
-      # 10) Locate unsigned/release APK
-      # ---------------------------------------------------------
-      - name: Locate Release APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f \
-            -iname '*.apk' \
-            | head -n 1)"
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: Release APK was not generated."
-            find "$PROJECT_DIR/app/build" -type f | sort || true
-            exit 1
-          fi
-
-          echo "APK:"
-          echo "$APK"
-
-          mkdir -p "$GITHUB_WORKSPACE/release"
-
-          cp "$APK" \
-            "$GITHUB_WORKSPACE/release/Elora-Dashboard-unsigned.apk"
-
-          echo "APK_FILE=$GITHUB_WORKSPACE/release/Elora-Dashboard-unsigned.apk" \
-            >> "$GITHUB_ENV"
-
-      # ---------------------------------------------------------
-      # 11) Decode signing key from GitHub Secret
-      # ---------------------------------------------------------
-      - name: Prepare signing keystore
-        shell: bash
-        env:
-          ELORA_KEYSTORE_BASE64: ${{ secrets.ELORA_KEYSTORE_BASE64 }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${ELORA_KEYSTORE_BASE64:-}" ]; then
-            echo "ERROR: ELORA_KEYSTORE_BASE64 secret is missing."
-            echo
-            echo "Create this GitHub repository secret first."
-            exit 1
-          fi
-
-          printf '%s' "$ELORA_KEYSTORE_BASE64" \
-            | base64 --decode \
-            > "$RUNNER_TEMP/elora-release.keystore"
-
-          test -s "$RUNNER_TEMP/elora-release.keystore"
-
-          echo "Keystore prepared."
-
-      # ---------------------------------------------------------
-      # 12) Locate Android build tools
-      # ---------------------------------------------------------
-      - name: Prepare Android signing tools
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* \
-            | sort -V \
-            | tail -n 1)"
-
-          if [ ! -x "$BUILD_TOOLS/apksigner" ]; then
-            echo "ERROR: apksigner not found."
-            exit 1
-          fi
-
-          if [ ! -x "$BUILD_TOOLS/zipalign" ]; then
-            echo "ERROR: zipalign not found."
-            exit 1
-          fi
-
-          echo "BUILD_TOOLS=$BUILD_TOOLS" >> "$GITHUB_ENV"
-
-      # ---------------------------------------------------------
-      # 13) Zipalign
-      # ---------------------------------------------------------
-      - name: Zipalign APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          "$BUILD_TOOLS/zipalign" \
-            -f \
-            -p \
-            4 \
-            "$APK_FILE" \
-            "$GITHUB_WORKSPACE/release/Elora-Dashboard-aligned.apk"
-
-      # ---------------------------------------------------------
-      # 14) Sign APK
-      # ---------------------------------------------------------
-      - name: Sign APK
-        shell: bash
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ELORA_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
-            echo "ERROR: ELORA_KEYSTORE_PASSWORD secret is missing."
-            exit 1
-          fi
-
-          if [ -z "${KEY_ALIAS:-}" ]; then
-            echo "ERROR: ELORA_KEY_ALIAS secret is missing."
-            exit 1
-          fi
-
-          if [ -z "${KEY_PASSWORD:-}" ]; then
-            echo "ERROR: ELORA_KEY_PASSWORD secret is missing."
-            exit 1
-          fi
-
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks "$RUNNER_TEMP/elora-release.keystore" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:$KEYSTORE_PASSWORD" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            --out "$GITHUB_WORKSPACE/release/Elora-Dashboard.apk" \
-            "$GITHUB_WORKSPACE/release/Elora-Dashboard-aligned.apk"
-
-      # ---------------------------------------------------------
-      # 15) Verify cryptographic signature
-      # ---------------------------------------------------------
-      - name: Verify APK signature
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          "$BUILD_TOOLS/apksigner" verify \
-            --verbose \
-            --print-certs \
-            "$GITHUB_WORKSPACE/release/Elora-Dashboard.apk"
-
-          echo
-          echo "APK signature verification PASSED."
-
-      # ---------------------------------------------------------
-      # 16) Verify APK is structurally valid
-      # ---------------------------------------------------------
-      - name: Verify APK package
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="$GITHUB_WORKSPACE/release/Elora-Dashboard.apk"
-
-          test -s "$APK"
-
-          echo "APK size:"
-          ls -lh "$APK"
-
-          echo
-          echo "APK file:"
-          file "$APK"
-
-          echo
-          echo "ZIP integrity:"
-          unzip -t "$APK" >/dev/null
-
-          echo "ZIP/APK integrity PASSED."
-
-      # ---------------------------------------------------------
-      # 17) Verify package name
-      # ---------------------------------------------------------
-      - name: Verify application package
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="$GITHUB_WORKSPACE/release/Elora-Dashboard.apk"
-
-          "$ANDROID_HOME"/build-tools/"$(basename "$BUILD_TOOLS")"/aapt \
-            dump badging "$APK" \
-            | grep -q "package: name='com.elora.dashboard'"
-
-          echo "Package verification PASSED:"
-          echo "com.elora.dashboard"
-
-      # ---------------------------------------------------------
-      # 18) SHA-256
-      # ---------------------------------------------------------
-      - name: Generate SHA-256
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$GITHUB_WORKSPACE/release"
-
-          sha256sum Elora-Dashboard.apk \
-            | tee Elora-Dashboard.apk.sha256
-
-      # ---------------------------------------------------------
-      # 19) Upload final APK
-      # ---------------------------------------------------------
-      - name: Upload final signed APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Elora-Dashboard-Signed-Release
+          name: Elora-Dashboard-v1.9.8
           path: |
-            release/Elora-Dashboard.apk
-            release/Elora-Dashboard.apk.sha256
+            **/build/outputs/apk/release/*.apk
           if-no-files-found: error
-          retention-days: 30
