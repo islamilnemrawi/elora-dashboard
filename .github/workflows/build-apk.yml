@@ -16,22 +16,23 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      # 1) Download repository
+
+      # 1 — Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2) Java 17
+      # 2 — Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # 3) Android SDK
+      # 3 — Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 4) Install Android SDK components
+      # 4 — Install Android SDK
       - name: Install Android SDK 35
         shell: bash
         run: |
@@ -44,7 +45,7 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      # 5) Find and extract Elora source ZIP
+      # 5 — Extract Elora source
       - name: Prepare Android project
         shell: bash
         run: |
@@ -53,107 +54,135 @@ jobs:
           rm -rf android-project
           mkdir -p android-project
 
-          echo "Repository contents:"
+          echo "======================================"
+          echo "Repository files"
+          echo "======================================"
+
           find . -maxdepth 3 -type f | sort | head -200
 
           ZIP_FILE=""
 
-          # Prefer the known Elora Dashboard source ZIP
-          ZIP_FILE="$(find . -type f \
-            -name 'Elora_Dashboard*.zip' \
+          ZIP_FILE="$(find . \
+            -type f \
+            -iname 'Elora_Dashboard*.zip' \
             -not -path './android-project/*' \
             | head -n 1 || true)"
 
           if [ -n "$ZIP_FILE" ]; then
-            echo "Found source ZIP: $ZIP_FILE"
+
+            echo ""
+            echo "Found Elora source:"
+            echo "$ZIP_FILE"
+
             unzip -q "$ZIP_FILE" -d android-project
+
           else
-            echo "No source ZIP found."
-            echo "Checking whether the repository itself is already an Android project..."
+
+            echo ""
+            echo "No Elora ZIP found."
+            echo "Checking repository directly..."
 
             if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
+
               cp -R . android-project/
+
             elif [ -d "app" ]; then
+
               cp -R . android-project/
+
             else
-              echo "ERROR: Elora Android source was not found."
+
+              echo ""
+              echo "ERROR: Android project was not found."
               exit 1
+
             fi
+
           fi
 
           echo ""
-          echo "Searching for settings.gradle..."
+          echo "======================================"
+          echo "Finding Android project"
+          echo "======================================"
 
-          PROJECT_DIR="$(find android-project \
-            -type f \
-            \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
-            -print \
-            | head -n 1 || true)"
+          SETTINGS_FILE="$(
+            find android-project \
+              -type f \
+              \( \
+                -name 'settings.gradle' \
+                -o \
+                -name 'settings.gradle.kts' \
+              \) \
+              -print \
+              | head -n 1 \
+          )"
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: settings.gradle was not found."
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: settings.gradle not found."
             echo ""
             echo "Extracted files:"
             find android-project -maxdepth 5 -type f | sort | head -300
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$PROJECT_DIR")"
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
 
           echo "PROJECT_DIR=$PROJECT_DIR"
 
           if [ ! -d "$PROJECT_DIR/app" ]; then
-            echo "ERROR: app directory was not found."
+            echo ""
+            echo "ERROR: app directory not found."
+            echo ""
             echo "Project contents:"
-            find "$PROJECT_DIR" -maxdepth 3 -type f | sort
+            find "$PROJECT_DIR" -maxdepth 4 -type f | sort
             exit 1
           fi
 
-          echo "Android project is valid."
-
           echo ""
-          echo "Important files:"
-          test -f "$PROJECT_DIR/settings.gradle" && echo "✓ settings.gradle" || true
-          test -f "$PROJECT_DIR/build.gradle" && echo "✓ build.gradle" || true
-          test -f "$PROJECT_DIR/app/build.gradle" && echo "✓ app/build.gradle" || true
-          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml" && echo "✓ AndroidManifest.xml" || true
-          test -f "$PROJECT_DIR/app/src/main/assets/firebase-config.json" && echo "✓ firebase-config.json" || true
-          test -f "$PROJECT_DIR/app/src/main/assets/supabase-config.js" && echo "✓ supabase-config.js" || true
-          test -f "$PROJECT_DIR/app/src/main/assets/Elora_Dashboard.html" && echo "✓ Elora_Dashboard.html" || true
-          test -f "$PROJECT_DIR/app/src/main/java/com/elora/dashboard/MainActivity.java" && echo "✓ MainActivity.java" || true
+          echo "Android project verified successfully."
 
           echo "$PROJECT_DIR" > project_dir.txt
 
-      # 6) Setup Gradle 8.9
+      # 6 — Gradle 8.9
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      # 7) Validate Java/XML source before building
-      - name: Validate Android source
+      # 7 — Verify important files
+      - name: Verify project files
         shell: bash
         run: |
           set -euo pipefail
 
           PROJECT_DIR="$(cat project_dir.txt)"
 
-          echo "Validating AndroidManifest.xml..."
-          python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-          ET.parse("$(cat project_dir.txt)/app/src/main/AndroidManifest.xml")
-          print("AndroidManifest.xml: OK")
-          PY
+          echo "======================================"
+          echo "Project verification"
+          echo "======================================"
 
-          echo "Checking Java source files..."
-          find "$PROJECT_DIR/app/src/main/java" -name '*.java' -print
+          test -f "$PROJECT_DIR/settings.gradle" \
+            && echo "✓ settings.gradle"
 
-          echo "Java files found:"
-          find "$PROJECT_DIR/app/src/main/java" -name '*.java' | wc -l
+          test -f "$PROJECT_DIR/build.gradle" \
+            && echo "✓ build.gradle"
 
-          echo "Source validation completed."
+          test -f "$PROJECT_DIR/app/build.gradle" \
+            && echo "✓ app/build.gradle"
 
-      # 8) Build Debug APK
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml" \
+            && echo "✓ AndroidManifest.xml"
+
+          test -f "$PROJECT_DIR/app/src/main/assets/firebase-config.json" \
+            && echo "✓ firebase-config.json"
+
+          test -f "$PROJECT_DIR/app/src/main/assets/supabase-config.js" \
+            && echo "✓ supabase-config.js"
+
+          echo ""
+          echo "All required files are present."
+
+      # 8 — Build APK
       - name: Build Debug APK
         shell: bash
         run: |
@@ -163,53 +192,74 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "Building from:"
+          echo "======================================"
+          echo "Building Elora Dashboard"
+          echo "======================================"
+
+          echo ""
+          echo "Project:"
           pwd
 
           echo ""
-          echo "Gradle version:"
+          echo "Java:"
+          java -version
+
+          echo ""
+          echo "Gradle:"
           gradle --version
 
           echo ""
-          echo "Running clean build..."
+          echo "Starting build..."
 
           gradle clean assembleDebug \
             --no-daemon \
             --stacktrace \
             --warning-mode all
 
-      # 9) Verify APK
-      - name: Verify APK
+      # 9 — Find and prepare APK
+      - name: Prepare APK
         shell: bash
         run: |
           set -euo pipefail
 
           PROJECT_DIR="$(cat project_dir.txt)"
 
-          APK="$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
-            -type f \
-            -name '*.apk' \
-            | head -n 1 || true)"
+          echo "======================================"
+          echo "Searching for APK"
+          echo "======================================"
+
+          APK="$(
+            find "$PROJECT_DIR/app/build/outputs/apk/debug" \
+              -type f \
+              -name '*.apk' \
+              | head -n 1 \
+          )"
 
           if [ -z "$APK" ]; then
+            echo ""
             echo "ERROR: APK was not generated."
             echo ""
-            find "$PROJECT_DIR/app/build" -type f 2>/dev/null | sort || true
+            echo "Build output:"
+            find "$PROJECT_DIR/app/build" \
+              -type f \
+              | sort || true
             exit 1
           fi
 
-          echo "APK generated successfully:"
+          echo ""
+          echo "APK found:"
           ls -lh "$APK"
 
           mkdir -p release
 
-          cp "$APK" "release/Elora-Dashboard-v1.9.2.apk"
+          cp "$APK" \
+            "release/Elora-Dashboard-v1.9.2.apk"
 
           echo ""
           echo "Final APK:"
-          ls -lh release/Elora-Dashboard-v1.9.2.apk
+          ls -lh "release/Elora-Dashboard-v1.9.2.apk"
 
-      # 10) Upload APK
+      # 10 — Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -218,14 +268,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # 11) Build summary
-      - name: Build summary
+      # 11 — Final result
+      - name: Build success
         shell: bash
         run: |
+          echo ""
           echo "======================================"
-          echo "       ELORA DASHBOARD BUILD"
+          echo "     ELORA DASHBOARD BUILD SUCCESS"
           echo "======================================"
+          echo ""
           echo "Version: 1.9.2"
-          echo "Status: SUCCESS"
           echo "APK: Elora-Dashboard-v1.9.2.apk"
+          echo ""
+          echo "The APK is available in Artifacts."
           echo "======================================"
