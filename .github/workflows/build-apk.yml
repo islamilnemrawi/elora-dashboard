@@ -8,68 +8,121 @@ on:
 
 jobs:
   build:
-    name: Build APK
+    name: Build Elora Dashboard
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find Elora ZIP
+      - name: Extract Elora project
         shell: bash
         run: |
           set -e
 
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -1)
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name '*.zip' | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Elora ZIP file was not found."
+            echo "ERROR: ZIP file not found"
             exit 1
           fi
 
-          echo "Found ZIP:"
-          echo "$ZIP_FILE"
+          echo "Found: $ZIP_FILE"
 
-          echo "ZIP contents:"
-          unzip -l "$ZIP_FILE" | head -80
-
+          rm -rf extracted
           mkdir -p extracted
+
           unzip -q "$ZIP_FILE" -d extracted
 
-      - name: Locate Android project
-        shell: bash
-        run: |
-          set -e
+          echo "Searching for Android project..."
 
-          PROJECT_DIR=$(find extracted -type f -name "settings.gradle" -o -name "settings.gradle.kts" | head -1)
+          SETTINGS_FILE=$(find extracted -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) | head -n 1)
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android settings.gradle was not found."
-            find extracted -maxdepth 5 -type f | sort | head -300
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: settings.gradle not found"
+            find extracted -maxdepth 5 -type f | sort
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$PROJECT_DIR")
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+
+          echo "Project directory: $PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Android project:"
-          echo "$PROJECT_DIR"
-
-          echo "Project files:"
-          find "$PROJECT_DIR" -maxdepth 3 -type f | sort | head -200
-
-      - name: Set up Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
+        shell: bash
         run: |
-          sdkmanager "platform-tools"
-          sdkmanager "
+          set -e
+
+          yes | sdkmanager --licenses > /dev/null || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Verify project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Project directory:"
+          echo "$PROJECT_DIR"
+
+          test -d "$PROJECT_DIR/app"
+
+          if [ -f "$PROJECT_DIR/settings.gradle" ]; then
+            echo "settings.gradle found"
+          elif [ -f "$PROJECT_DIR/settings.gradle.kts" ]; then
+            echo "settings.gradle.kts found"
+          else
+            echo "ERROR: Gradle settings file missing"
+            exit 1
+          fi
+
+          echo "Android project is ready."
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "Starting Gradle build..."
+
+          gradle clean assembleDebug --stacktrace
+
+      - name: Locate APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching for APK..."
+
+          find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f \
+            -name '*.apk' \
+            -print
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Elora-Dashboard-APK
+          path: '**/app/build/outputs/apk/**/*.apk'
+          if-no-files-found: error
