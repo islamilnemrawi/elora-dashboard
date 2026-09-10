@@ -12,65 +12,93 @@ permissions:
   contents: read
 
 concurrency:
-  group: elora-dashboard-build-${{ github.ref }}
+  group: elora-dashboard-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build Elora Dashboard
     runs-on: ubuntu-latest
 
     steps:
-      # 1) تحميل المشروع
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2) إعداد Java 17
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # 3) إعداد Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 4) تثبيت Android SDK المطلوب
-      - name: Install Android SDK 35
+      - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses || true
+
           sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      # 5) إعداد Gradle 8.7
-      - name: Setup Gradle 8.7
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
           cache-disabled: true
 
-      # 6) التحقق من البيئة
-      - name: Check build environment
+      - name: Find Android project
+        shell: bash
         run: |
-          echo "Java:"
-          java -version
+          echo "Searching for Gradle project..."
 
-          echo "Gradle:"
-          gradle --version
+          SETTINGS_FILE=$(find . \
+            -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -not -path "./.git/*" \
+            | head -n 1)
 
-          echo "Android SDK:"
-          echo "$ANDROID_HOME"
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: settings.gradle was not found."
+            echo "Project files:"
+            find . -maxdepth 4 -type f | sort
+            exit 1
+          fi
 
-      # 7) تنظيف المشروع
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+
+          echo "Gradle settings found:"
+          echo "$SETTINGS_FILE"
+
+          echo "Android project directory:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Show project structure
+        run: |
+          echo "Building from:"
+          pwd
+          echo "$PROJECT_DIR"
+
+          echo "Project contents:"
+          ls -lah "$PROJECT_DIR"
+
+          echo "Gradle files:"
+          find "$PROJECT_DIR" \
+            -maxdepth 2 \
+            -type f \
+            \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print
+
       - name: Clean project
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           gradle --no-daemon clean
 
-      # 8) بناء نسخة Debug قابلة للتثبيت
       - name: Build Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           gradle \
             --no-daemon \
@@ -78,15 +106,16 @@ jobs:
             --warning-mode all \
             :app:assembleDebug
 
-      # 9) التأكد من وجود APK
       - name: Verify APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          ls -lah app/build/outputs/apk/debug/
-
           test -f app/build/outputs/apk/debug/app-debug.apk
 
-      # 10) إعادة تسمية APK باسم واضح
+          echo "APK successfully created:"
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+
       - name: Prepare APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           mkdir -p release
 
@@ -94,13 +123,12 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk \
             release/Elora-Dashboard-v1.3.0-debug.apk
 
-          ls -lah release/
+          ls -lh release/
 
-      # 11) رفع APK كـ GitHub Artifact
-      - name: Upload Debug APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Elora-Dashboard-v1.3.0-Debug
-          path: release/Elora-Dashboard-v1.3.0-debug.apk
+          path: ${{ env.PROJECT_DIR }}/release/Elora-Dashboard-v1.3.0-debug.apk
           if-no-files-found: error
           retention-days: 30
