@@ -1,90 +1,158 @@
-name: Build Elora Dashboard APK
+name: Elora Dashboard - Secure APK Build
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elora-dashboard-build
+  cancel-in-progress: true
 
 jobs:
   build:
+    name: Build Elora Dashboard APK
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
+      # ---------------------------------------------------------
+      # 1. Download repository
+      # ---------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show repository files
+      # ---------------------------------------------------------
+      # 2. Find and validate ZIP
+      # ---------------------------------------------------------
+      - name: Locate Dashboard ZIP
+        shell: bash
         run: |
-          set -e
-          echo "Repository files:"
+          set -Eeuo pipefail
+
+          echo "Repository:"
           ls -lah
 
-      - name: Find ZIP
-        run: |
-          set -e
+          ZIP_COUNT=$(find . -maxdepth 2 -type f -iname "*.zip" | wc -l)
 
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "No ZIP file found."
+          if [ "$ZIP_COUNT" -eq 0 ]; then
+            echo "::error::No Dashboard ZIP file was found."
             exit 1
           fi
 
-          echo "ZIP found:"
+          if [ "$ZIP_COUNT" -gt 1 ]; then
+            echo "::error::More than one ZIP file was found."
+            find . -maxdepth 2 -type f -iname "*.zip" -print
+            exit 1
+          fi
+
+          ZIP_FILE="$(find . -maxdepth 2 -type f -iname "*.zip" -print -quit)"
+
+          echo "Using ZIP:"
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Test ZIP
+      - name: Validate ZIP integrity
+        shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
+
+          echo "Testing ZIP..."
           unzip -t "$ZIP_FILE"
 
-      - name: Extract Dashboard
+          echo "ZIP integrity: OK"
+
+      # ---------------------------------------------------------
+      # 3. Extract project
+      # ---------------------------------------------------------
+      - name: Extract Dashboard Project
+        shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
           rm -rf extracted
-          mkdir extracted
+          mkdir -p extracted
 
           unzip -q "$ZIP_FILE" -d extracted
 
-          echo "Extracted project:"
-          find extracted -maxdepth 3 -type f | sort | head -200
+          echo "Extraction completed."
 
-      - name: Detect Android project
+          find extracted -maxdepth 3 -type f -print | sort | head -200
+
+      # ---------------------------------------------------------
+      # 4. Detect Android project automatically
+      # ---------------------------------------------------------
+      - name: Detect Android Project
+        shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
-          SETTINGS=$(find extracted -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            | head -n 1)
+          SETTINGS_FILE="$(
+            find extracted \
+              -type f \
+              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              -print -quit
+          )"
 
-          if [ -z "$SETTINGS" ]; then
-            echo "settings.gradle not found."
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "::error::Android settings.gradle was not found."
+            echo "Extracted project:"
+            find extracted -maxdepth 5 -type f -print
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
 
-          echo "Android project:"
+          echo "Android project root:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Setup Java 17
+      # ---------------------------------------------------------
+      # 5. Verify required Android files
+      # ---------------------------------------------------------
+      - name: Verify Android Project
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          test -f "$PROJECT_DIR/settings.gradle" \
+            || test -f "$PROJECT_DIR/settings.gradle.kts"
+
+          test -f "$PROJECT_DIR/build.gradle" \
+            || test -f "$PROJECT_DIR/build.gradle.kts"
+
+          test -d "$PROJECT_DIR/app"
+
+          echo "Android project structure: OK"
+
+          echo ""
+          echo "Project files:"
+          find "$PROJECT_DIR" -maxdepth 3 -type f -print | sort
+
+      # ---------------------------------------------------------
+      # 6. Java
+      # ---------------------------------------------------------
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
+      # ---------------------------------------------------------
+      # 7. Android SDK
+      # ---------------------------------------------------------
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
+        shell: bash
         run: |
+          set -Eeuo pipefail
+
           yes | sdkmanager --licenses >/dev/null || true
 
           sdkmanager \
@@ -92,56 +160,85 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
+          echo "Android SDK ready."
+
+      # ---------------------------------------------------------
+      # 8. Install Gradle
+      # ---------------------------------------------------------
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
-      - name: Check Gradle
+      - name: Verify Gradle
+        shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
+
+          java -version
           gradle --version
 
-      - name: Build APK
+      # ---------------------------------------------------------
+      # 9. Build APK
+      # ---------------------------------------------------------
+      - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
-          echo "Building Elora Dashboard APK..."
+          echo "Starting Elora Dashboard build..."
 
-          gradle assembleDebug --stacktrace
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            assembleDebug
 
-      - name: Find generated APK
+      # ---------------------------------------------------------
+      # 10. Locate APK
+      # ---------------------------------------------------------
+      - name: Locate Generated APK
+        shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
-          echo "Searching for generated APK..."
+          echo "Searching for APK..."
 
           find "$PROJECT_DIR" \
             -type f \
             -name "*.apk" \
             -print
 
-          APK=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "*.apk" \
-            | head -n 1)
+          APK_FILE="$(
+            find "$PROJECT_DIR" \
+              -type f \
+              -name "*.apk" \
+              -print \
+              | head -n 1
+          )"
 
-          if [ -z "$APK" ]; then
-            echo "APK was not generated."
+          if [ -z "$APK_FILE" ]; then
+            echo "::error::APK was not generated."
             exit 1
           fi
 
-          echo "APK:"
-          echo "$APK"
+          echo "APK found:"
+          echo "$APK_FILE"
 
           mkdir -p release
 
-          cp "$APK" release/Elora_Dashboard.apk
+          cp "$APK_FILE" \
+            "release/Elora_Dashboard.apk"
 
-      - name: Upload APK
+          ls -lh release/Elora_Dashboard.apk
+
+      # ---------------------------------------------------------
+      # 11. Upload APK as GitHub Artifact
+      # ---------------------------------------------------------
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Elora-Dashboard-APK
           path: release/Elora_Dashboard.apk
           if-no-files-found: error
+          retention-days: 7
