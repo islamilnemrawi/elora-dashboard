@@ -1,255 +1,116 @@
-name: Build Elora Dashboard v1.9.13 PRO
+name: Build Elora Dashboard APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
-
-permissions:
-  contents: write
+    tags:
+      - 'v*'
 
 jobs:
   build:
-    name: Build Elora Dashboard APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
-
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Setup Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-
-      - name: Prepare Android SDK
+      - name: Find project ZIP
         shell: bash
         run: |
-          set -euo pipefail
-
-          echo "Preparing Android SDK..."
-
-          if [[ -z "${ANDROID_HOME:-}" ]]; then
-            echo "ERROR: ANDROID_HOME is not configured."
-            exit 1
-          fi
-
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER=$(
-              find "$ANDROID_HOME/cmdline-tools" \
-                -type f \
-                -name "sdkmanager" \
-                -print \
-                | head -n 1
-            )
-          fi
-
-          if [[ -z "${SDKMANAGER:-}" || ! -x "$SDKMANAGER" ]]; then
-            echo "ERROR: sdkmanager not found."
-            exit 1
-          fi
-
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-          echo "Android SDK ready."
-
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-          cache-disabled: true
-
-
-      - name: Locate Elora Android project
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "========================================"
-          echo "Locating Elora Android project"
-          echo "========================================"
-
-          if [[ \
-            -f "$GITHUB_WORKSPACE/settings.gradle" &&
-            -f "$GITHUB_WORKSPACE/app/build.gradle"
-          ]]; then
-
-            echo "Project found in repository root."
-
-            echo "PROJECT_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
-
-            exit 0
-          fi
+          set -e
 
           ZIP_FILE=""
 
-          while IFS= read -r -d '' FILE; do
+          for f in *.zip; do
+            [ -f "$f" ] || continue
 
-            echo "Checking ZIP:"
-            echo "$FILE"
-
-            ZIP_CONTENT="$(
-              unzip -Z1 "$FILE" 2>/dev/null || true
-            )"
-
-            if [[ -z "$ZIP_CONTENT" ]]; then
-              continue
-            fi
-
-            HAS_SETTINGS=0
-            HAS_APP_GRADLE=0
-
-            if echo "$ZIP_CONTENT" |
-              grep -Eq '(^|/)settings\.gradle$'; then
-              HAS_SETTINGS=1
-            fi
-
-            if echo "$ZIP_CONTENT" |
-              grep -Eq '(^|/)app/build\.gradle$'; then
-              HAS_APP_GRADLE=1
-            fi
-
-            if [[ \
-              "$HAS_SETTINGS" -eq 1 &&
-              "$HAS_APP_GRADLE" -eq 1
-            ]]; then
-
-              ZIP_FILE="$FILE"
-
-              echo "Valid Android project found."
-
+            if unzip -Z1 "$f" | grep -qx "settings.gradle"; then
+              ZIP_FILE="$f"
               break
             fi
-
-          done < <(
-            find "$GITHUB_WORKSPACE" \
-              -type f \
-              -name "*.zip" \
-              ! -path "*/.git/*" \
-              -print0
-          )
-
-          if [[ -z "$ZIP_FILE" ]]; then
-
-            echo "ERROR: Elora Android project ZIP was not found."
-
-            find "$GITHUB_WORKSPACE" \
-              -type f \
-              -name "*.zip" \
-              ! -path "*/.git/*" \
-              -print || true
-
-            exit 1
-          fi
-
-          EXTRACT_DIR="$GITHUB_WORKSPACE/_elora_project"
-
-          rm -rf "$EXTRACT_DIR"
-          mkdir -p "$EXTRACT_DIR"
-
-          echo "Extracting project..."
-
-          unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
-
-          SETTINGS_FILE="$(
-            find "$EXTRACT_DIR" \
-              -type f \
-              -name "settings.gradle" \
-              -print \
-              | head -n 1
-          )"
-
-          if [[ -z "$SETTINGS_FILE" ]]; then
-            echo "ERROR: settings.gradle not found."
-            exit 1
-          fi
-
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-
-          if [[ ! -f "$PROJECT_DIR/app/build.gradle" ]]; then
-            echo "ERROR: app/build.gradle not found."
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "========================================"
-          echo "ELORA PROJECT FOUND"
-          echo "========================================"
-          echo "$PROJECT_DIR"
-
-
-      - name: Verify Elora project
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_DIR"
-
-          REQUIRED_FILES=(
-            "settings.gradle"
-            "build.gradle"
-            "app/build.gradle"
-            "app/src/main/AndroidManifest.xml"
-            "app/src/main/java/com/elora/dashboard/MainActivity.java"
-            "app/src/main/assets/Elora_Dashboard.html"
-            "app/src/main/assets/index.html"
-            "app/src/main/assets/supabase-config.js"
-          )
-
-          for FILE in "${REQUIRED_FILES[@]}"; do
-
-            if [[ ! -f "$FILE" ]]; then
-              echo "ERROR: Missing:"
-              echo "$FILE"
-              exit 1
-            fi
-
-            echo "OK: $FILE"
-
           done
 
-          echo "Project verification passed."
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Project ZIP not found"
+            exit 1
+          fi
 
+          echo "Using project ZIP: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Verify application version
+      - name: Extract project
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
+
+          rm -rf "$RUNNER_TEMP/elora_project"
+          mkdir -p "$RUNNER_TEMP/elora_project"
+
+          unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/elora_project"
+
+          cd "$RUNNER_TEMP/elora_project"
+
+          if [ ! -f settings.gradle ] && [ -f */settings.gradle ]; then
+            PROJECT_DIR="$(dirname "$(find . -name settings.gradle -print -quit)")"
+            cd "$PROJECT_DIR"
+          fi
+
+          echo "PROJECT_DIR=$PWD" >> "$GITHUB_ENV"
+
+          echo "Project directory:"
+          pwd
+
+          echo "Project files:"
+          ls -la
+
+      - name: Verify Android project
+        shell: bash
+        run: |
+          set -e
 
           cd "$PROJECT_DIR"
 
-          grep -Eq \
-            "applicationId[[:space:]]+['\"]com\.elora\.dashboard['\"]" \
-            app/build.gradle
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
 
-          grep -Eq \
-            "versionCode[[:space:]]+19" \
-            app/build.gradle
+          echo "Android project verified."
 
-          grep -Eq \
-            "versionName[[:space:]]+['\"]1\.9\.13['\"]" \
-            app/build.gradle
+      - name: Verify application ID and version
+        shell: bash
+        run: |
+          set -e
 
-          echo "Application ID : com.elora.dashboard"
-          echo "Version Code   : 19"
-          echo "Version Name   : 1.9.13"
+          cd "$PROJECT_DIR"
 
+          echo "Checking applicationId..."
 
-      - name: Check signing secrets
+          grep -n "applicationId" app/build.gradle || true
+          grep -n "versionCode" app/build.gradle || true
+          grep -n "versionName" app/build.gradle || true
+
+          grep -q 'applicationId[[:space:]]*=[[:space:]]*"com.elora.dashboard"' app/build.gradle
+          grep -q 'versionCode[[:space:]]*=[[:space:]]*19' app/build.gradle
+          grep -q 'versionName[[:space:]]*=[[:space:]]*"1.9.13"' app/build.gradle
+
+          echo "Application/version verified."
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare and validate release keystore
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.ELORA_KEYSTORE_BASE64 }}
@@ -257,221 +118,166 @@ jobs:
           KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ELORA_KEY_PASSWORD }}
         run: |
-          set -euo pipefail
+          set -e
 
-          [[ -n "$KEYSTORE_B64" ]] || {
-            echo "ERROR: ELORA_KEYSTORE_BASE64 missing."
-            exit 1
-          }
-
-          [[ -n "$KEYSTORE_PASSWORD" ]] || {
-            echo "ERROR: ELORA_KEYSTORE_PASSWORD missing."
-            exit 1
-          }
-
-          [[ -n "$KEY_ALIAS" ]] || {
-            echo "ERROR: ELORA_KEY_ALIAS missing."
-            exit 1
-          }
-
-          [[ -n "$KEY_PASSWORD" ]] || {
-            echo "ERROR: ELORA_KEY_PASSWORD missing."
-            exit 1
-          }
-
-          echo "Signing secrets detected."
-
-
-      - name: Restore release keystore
-        shell: bash
-        env:
-          KEYSTORE_B64: ${{ secrets.ELORA_KEYSTORE_BASE64 }}
-        run: |
-          set -euo pipefail
-
-          KEYSTORE_FILE="$RUNNER_TEMP/elora-release.keystore"
-
-          printf '%s' "$KEYSTORE_B64" |
-            base64 --decode |
-            tr -d '\r\n' \
-            > "$KEYSTORE_FILE"
-
-          if [[ ! -s "$KEYSTORE_FILE" ]]; then
-            echo "ERROR: Keystore is empty."
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "ERROR: ELORA_KEYSTORE_BASE64 is missing."
             exit 1
           fi
 
-          echo "ELORA_KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "ERROR: ELORA_KEYSTORE_PASSWORD is missing."
+            exit 1
+          fi
 
-          echo "Keystore restored successfully."
+          if [ -z "$KEY_ALIAS" ]; then
+            echo "ERROR: ELORA_KEY_ALIAS is missing."
+            exit 1
+          fi
 
+          KEYSTORE_FILE="$RUNNER_TEMP/elora-release.keystore"
+
+          # Remove whitespace from the BASE64 text only.
+          # Never modify the decoded binary keystore.
+          CLEAN_B64=$(printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]')
+
+          printf '%s' "$CLEAN_B64" | base64 --decode > "$KEYSTORE_FILE"
+
+          if [ ! -s "$KEYSTORE_FILE" ]; then
+            echo "ERROR: Decoded keystore is empty."
+            exit 1
+          fi
+
+          echo "Keystore bytes: $(wc -c < "$KEYSTORE_FILE")"
+
+          KEYSTORE_TYPE=""
+
+          if keytool \
+            -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -storetype PKCS12 \
+            >/dev/null 2>&1; then
+
+            KEYSTORE_TYPE="PKCS12"
+
+          elif keytool \
+            -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -storetype JKS \
+            >/dev/null 2>&1; then
+
+            KEYSTORE_TYPE="JKS"
+
+          else
+            echo "ERROR: Unable to open keystore."
+            echo "The Base64, keystore password, or keystore itself may be invalid."
+            exit 1
+          fi
+
+          echo "Detected keystore type: $KEYSTORE_TYPE"
+
+          keytool \
+            -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -storetype "$KEYSTORE_TYPE" \
+            -alias "$KEY_ALIAS" \
+            >/dev/null
+
+          echo "Alias verified: $KEY_ALIAS"
+
+          echo "KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo "ELORA_KEYSTORE_TYPE=$KEYSTORE_TYPE" >> "$GITHUB_ENV"
+
+      - name: Verify signing certificate
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
+        run: |
+          set -e
+
+          keytool \
+            -list \
+            -v \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -storetype "$ELORA_KEYSTORE_TYPE" \
+            -alias "$KEY_ALIAS" \
+            | grep -E "Owner:|SHA256:"
 
       - name: Build release APK
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
           cd "$PROJECT_DIR"
 
-          echo "========================================"
-          echo "BUILDING ELORA DASHBOARD v1.9.13"
-          echo "========================================"
+          chmod +x gradlew
 
-          gradle \
-            clean \
-            assembleRelease \
-            --no-daemon \
-            --stacktrace \
-            --warning-mode all
+          ./gradlew clean assembleRelease --no-daemon
 
-          echo "Gradle build completed."
-
-
-      - name: Locate unsigned release APK
+      - name: Locate unsigned APK
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          APK_DIR="$PROJECT_DIR/app/build/outputs/apk/release"
+          APK="$(find "$PROJECT_DIR/app/build/outputs/apk/release" \
+            -type f \
+            -name "*unsigned*.apk" \
+            | head -n 1)"
 
-          APK_FILE="$(
-            find "$APK_DIR" \
-              -type f \
-              -name "*.apk" \
-              -print \
-              | head -n 1
-          )"
-
-          if [[ -z "$APK_FILE" ]]; then
-
-            echo "ERROR: No APK was generated."
-
-            find "$PROJECT_DIR/app/build/outputs" \
-              -type f \
-              -name "*.apk" \
-              -print || true
-
+          if [ -z "$APK" ]; then
+            echo "ERROR: Unsigned APK not found."
+            find "$PROJECT_DIR/app/build/outputs" -type f || true
             exit 1
           fi
 
-          echo "ELORA_APK=$APK_FILE" >> "$GITHUB_ENV"
+          echo "Unsigned APK: $APK"
+          echo "UNSIGNED_APK=$APK" >> "$GITHUB_ENV"
 
-          echo "========================================"
-          echo "APK FOUND"
-          echo "========================================"
-          echo "$APK_FILE"
-
-
-      - name: Sign release APK
+      - name: Sign APK
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ELORA_KEY_PASSWORD }}
         run: |
-          set -euo pipefail
+          set -e
 
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          SIGNED_APK="$RUNNER_TEMP/elora-dashboard-1.9.13.apk"
 
-          SIGNED_APK="$RUNNER_TEMP/Elora-Dashboard-v1.9.13.apk"
-
-          if [[ ! -x "$APKSIGNER" ]]; then
-            echo "ERROR: apksigner not found."
-            exit 1
-          fi
-
-          echo "Signing release APK..."
-
-          "$APKSIGNER" sign \
-            --ks "$ELORA_KEYSTORE_FILE" \
-            --ks-key-alias "$KEY_ALIAS" \
+          apksigner sign \
+            --ks "$KEYSTORE_FILE" \
+            --ks-type "$ELORA_KEYSTORE_TYPE" \
             --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
             --key-pass "pass:$KEY_PASSWORD" \
             --out "$SIGNED_APK" \
-            "$ELORA_APK"
+            "$UNSIGNED_APK"
 
-          if [[ ! -s "$SIGNED_APK" ]]; then
-            echo "ERROR: Signed APK was not created."
-            exit 1
-          fi
+          echo "SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
 
-          echo "ELORA_SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
-
-          echo "APK signed successfully."
-
-
-      - name: Verify signed APK
+      - name: Verify APK signature
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
-
-          echo "========================================"
-          echo "VERIFYING APK SIGNATURE"
-          echo "========================================"
-
-          "$APKSIGNER" \
-            verify \
+          apksigner verify \
             --verbose \
-            "$ELORA_SIGNED_APK"
-
-          echo "Signature verification passed."
-
-          echo ""
-          echo "========================================"
-          echo "VERIFYING APK PACKAGE"
-          echo "========================================"
-
-          PACKAGE_INFO="$(
-            "$AAPT" \
-              dump badging \
-              "$ELORA_SIGNED_APK"
-          )"
-
-          echo "$PACKAGE_INFO" |
-            grep -E "^package:"
-
-          echo "$PACKAGE_INFO" |
-            grep -q "name='com.elora.dashboard'" || {
-              echo "ERROR: Wrong application ID."
-              exit 1
-            }
-
-          echo "$PACKAGE_INFO" |
-            grep -q "versionCode='19'" || {
-              echo "ERROR: Wrong version code."
-              exit 1
-            }
-
-          echo "$PACKAGE_INFO" |
-            grep -q "versionName='1.9.13'" || {
-              echo "ERROR: Wrong version name."
-              exit 1
-            }
-
-          echo ""
-          echo "========================================"
-          echo "APK VERIFICATION PASSED"
-          echo "========================================"
-
+            "$SIGNED_APK"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Elora-Dashboard-v1.9.13-PRO
-          path: ${{ env.ELORA_SIGNED_APK }}
-          if-no-files-found: error
-          retention-days: 30
-
+          name: Elora-Dashboard-1.9.13
+          path: ${{ env.SIGNED_APK }}
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.9.13
-          name: Elora Dashboard v1.9.13 PRO
+          files: ${{ env.SIGNED_APK }}
           generate_release_notes: true
-          files: ${{ env.ELORA_SIGNED_APK }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
