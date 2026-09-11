@@ -6,24 +6,48 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
+    name: Build Elora Dashboard 1.9.13
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Android
+
+      # ============================================================
+      # 2. ANDROID SDK
+      # ============================================================
+
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Java
+
+      # ============================================================
+      # 3. JAVA
+      # ============================================================
+
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Find project ZIP
+
+      # ============================================================
+      # 4. FIND PROJECT ZIP
+      # ============================================================
+
+      - name: Find Elora project ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -35,17 +59,37 @@ jobs:
               ZIP_FILE="$file"
               break
             fi
-          done < <(find . -maxdepth 1 -type f -name "*.zip" -print0)
+          done < <(
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 1 \
+              -type f \
+              -name "*.zip" \
+              -print0
+          )
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Android project ZIP was not found."
+            echo "ERROR: Elora project ZIP was not found."
+            echo ""
+            echo "Available ZIP files:"
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 1 \
+              -type f \
+              -name "*.zip" \
+              -print || true
             exit 1
           fi
 
-          echo "Using project: $ZIP_FILE"
+          echo "Found project ZIP:"
+          echo "$ZIP_FILE"
+
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Extract project
+
+      # ============================================================
+      # 5. EXTRACT PROJECT
+      # ============================================================
+
+      - name: Extract Elora project
         shell: bash
         run: |
           set -euo pipefail
@@ -60,18 +104,37 @@ jobs:
           if [ -f "$PROJECT_ROOT/settings.gradle" ]; then
             PROJECT_DIR="$PROJECT_ROOT"
           else
-            PROJECT_DIR="$(find "$PROJECT_ROOT" -type f -name settings.gradle -print -quit | xargs dirname)"
+            SETTINGS_FILE="$(
+              find "$PROJECT_ROOT" \
+                -type f \
+                -name "settings.gradle" \
+                -print -quit
+            )"
+
+            if [ -z "$SETTINGS_FILE" ]; then
+              echo "ERROR: settings.gradle not found."
+              exit 1
+            fi
+
+            PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
           fi
 
-          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
-            echo "ERROR: settings.gradle was not found."
+          if [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
+            echo "ERROR: Invalid Android project."
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+          echo ""
           echo "Project directory:"
           echo "$PROJECT_DIR"
+          echo ""
+
+
+      # ============================================================
+      # 6. VERIFY PROJECT STRUCTURE
+      # ============================================================
 
       - name: Verify Android project
         shell: bash
@@ -80,40 +143,117 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
+          REQUIRED_FILES=(
+            "settings.gradle"
+            "build.gradle"
+            "app/build.gradle"
+            "app/src/main/AndroidManifest.xml"
+          )
 
-          echo "Android project verified."
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "ERROR: Missing required file: $file"
+              exit 1
+            fi
+          done
 
-      - name: Verify Elora version
+          echo "Android project structure verified."
+
+
+      # ============================================================
+      # 7. VERIFY ELORA APPLICATION
+      # ============================================================
+
+      - name: Verify Elora application configuration
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$PROJECT_DIR"
 
-          echo "Checking applicationId/version..."
+          GRADLE_FILE="app/build.gradle"
 
-          grep -n "applicationId" app/build.gradle || true
-          grep -n "versionCode" app/build.gradle || true
-          grep -n "versionName" app/build.gradle || true
+          echo "=============================================="
+          echo "Elora application configuration"
+          echo "=============================================="
 
-          grep -Eq 'applicationId[[:space:]]*[=:][[:space:]]*"com\.elora\.dashboard"' app/build.gradle
-          grep -Eq 'versionCode[[:space:]]*[=:][[:space:]]*19' app/build.gradle
-          grep -Eq 'versionName[[:space:]]*[=:][[:space:]]*"1\.9\.13"' app/build.gradle
+          grep -nE \
+            "applicationId|versionCode|versionName" \
+            "$GRADLE_FILE" || true
 
-          echo "Elora 1.9.13 verified."
+          echo ""
 
-      - name: Setup Gradle
+          # --------------------------------------------------------
+          # applicationId
+          # Supports:
+          #
+          # applicationId 'com.elora.dashboard'
+          # applicationId "com.elora.dashboard"
+          # applicationId = 'com.elora.dashboard'
+          # applicationId = "com.elora.dashboard"
+          # --------------------------------------------------------
+
+          if ! grep -Eq \
+            "^[[:space:]]*applicationId[[:space:]]*(=[[:space:]]*)?['\"]com\.elora\.dashboard['\"]" \
+            "$GRADLE_FILE"; then
+
+            echo "ERROR: applicationId is not com.elora.dashboard"
+            exit 1
+          fi
+
+          # --------------------------------------------------------
+          # versionCode
+          # Supports:
+          #
+          # versionCode 19
+          # versionCode = 19
+          # --------------------------------------------------------
+
+          if ! grep -Eq \
+            "^[[:space:]]*versionCode[[:space:]]*(=[[:space:]]*)?19([[:space:]]*(//.*)?)?$" \
+            "$GRADLE_FILE"; then
+
+            echo "ERROR: versionCode is not 19"
+            exit 1
+          fi
+
+          # --------------------------------------------------------
+          # versionName
+          # Supports:
+          #
+          # versionName '1.9.13'
+          # versionName "1.9.13"
+          # versionName = '1.9.13'
+          # versionName = "1.9.13"
+          # --------------------------------------------------------
+
+          if ! grep -Eq \
+            "^[[:space:]]*versionName[[:space:]]*(=[[:space:]]*)?['\"]1\.9\.13['\"]([[:space:]]*(//.*)?)?$" \
+            "$GRADLE_FILE"; then
+
+            echo "ERROR: versionName is not 1.9.13"
+            exit 1
+          fi
+
+          echo ""
+          echo "=============================================="
+          echo "Elora 1.9.13 configuration VERIFIED"
+          echo "=============================================="
+
+
+      # ============================================================
+      # 8. GRADLE
+      # ============================================================
+
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      # ==========================================================
-      # RELEASE KEYSTORE
-      # ==========================================================
+
+      # ============================================================
+      # 9. RESTORE SIGNING KEYSTORE
+      # ============================================================
 
       - name: Restore release keystore
         shell: bash
@@ -121,51 +261,69 @@ jobs:
           KEYSTORE_B64: ${{ secrets.ELORA_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ELORA_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
+          echo "Preparing release keystore..."
+
           if [ -z "${KEYSTORE_B64:-}" ]; then
-            echo "ERROR: ELORA_KEYSTORE_BASE64 is empty."
+            echo "ERROR: ELORA_KEYSTORE_BASE64 is missing."
             exit 1
           fi
 
           if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
-            echo "ERROR: ELORA_KEYSTORE_PASSWORD is empty."
+            echo "ERROR: ELORA_KEYSTORE_PASSWORD is missing."
             exit 1
           fi
 
           if [ -z "${KEY_ALIAS:-}" ]; then
-            echo "ERROR: ELORA_KEY_ALIAS is empty."
+            echo "ERROR: ELORA_KEY_ALIAS is missing."
             exit 1
           fi
 
           KEYSTORE_FILE="$RUNNER_TEMP/elora-release.keystore"
 
-          # IMPORTANT:
-          # Remove whitespace from the BASE64 text BEFORE decoding.
-          # Never modify the decoded binary keystore.
-          CLEAN_B64="$(printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]')"
+          # Remove whitespace from BASE64 text ONLY.
+          # The decoded binary file is NEVER modified.
+          CLEAN_B64="$(
+            printf '%s' "$KEYSTORE_B64" |
+            tr -d '[:space:]'
+          )"
 
-          printf '%s' "$CLEAN_B64" | base64 --decode > "$KEYSTORE_FILE"
+          if [ -z "$CLEAN_B64" ]; then
+            echo "ERROR: Base64 keystore data is empty."
+            exit 1
+          fi
+
+          if ! printf '%s' "$CLEAN_B64" |
+            base64 --decode > "$KEYSTORE_FILE"; then
+
+            echo "ERROR: ELORA_KEYSTORE_BASE64 is invalid Base64."
+            exit 1
+          fi
 
           if [ ! -s "$KEYSTORE_FILE" ]; then
             echo "ERROR: Decoded keystore is empty."
             exit 1
           fi
 
-          SIZE="$(wc -c < "$KEYSTORE_FILE")"
+          KEYSTORE_SIZE="$(wc -c < "$KEYSTORE_FILE")"
 
-          echo "Decoded keystore size: ${SIZE} bytes"
+          echo "Decoded keystore size: ${KEYSTORE_SIZE} bytes"
 
-          if [ "$SIZE" -lt 100 ]; then
-            echo "ERROR: Keystore is suspiciously small."
+          if [ "$KEYSTORE_SIZE" -lt 100 ]; then
+            echo "ERROR: Decoded keystore is suspiciously small."
             exit 1
           fi
 
           echo "KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
 
-      - name: Detect and validate keystore format
+
+      # ============================================================
+      # 10. DETECT KEYSTORE TYPE
+      # ============================================================
+
+      - name: Detect release keystore type
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
@@ -175,75 +333,91 @@ jobs:
 
           echo "Detecting keystore format..."
 
-          DETECTED_TYPE=""
+          KEYSTORE_TYPE=""
 
-          # Try PKCS12 first.
           if keytool \
-              -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storepass "$KEYSTORE_PASSWORD" \
-              -storetype PKCS12 \
-              >/dev/null 2>&1; then
+            -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -storetype PKCS12 \
+            >/dev/null 2>&1; then
 
-            DETECTED_TYPE="PKCS12"
+            KEYSTORE_TYPE="PKCS12"
 
-          # Then try classic JKS.
           elif keytool \
-              -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storepass "$KEYSTORE_PASSWORD" \
-              -storetype JKS \
-              >/dev/null 2>&1; then
+            -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -storetype JKS \
+            >/dev/null 2>&1; then
 
-            DETECTED_TYPE="JKS"
+            KEYSTORE_TYPE="JKS"
 
           else
             echo ""
-            echo "============================================================"
-            echo "ERROR: RELEASE KEYSTORE CANNOT BE OPENED"
-            echo "============================================================"
+            echo "=================================================="
+            echo "ERROR: RELEASE KEYSTORE COULD NOT BE OPENED"
+            echo "=================================================="
             echo ""
-            echo "The GitHub secret ELORA_KEYSTORE_BASE64 is not a valid"
-            echo "keystore for the supplied password."
+            echo "The APK build is fine."
+            echo "The problem is the signing keystore/credentials."
             echo ""
-            echo "Possible causes:"
-            echo "1. Wrong Base64 content."
-            echo "2. Wrong keystore password."
-            echo "3. The secret contains a corrupted/truncated keystore."
-            echo "4. The secret contains something other than the original"
-            echo "   release keystore."
+            echo "Check these GitHub Secrets:"
+            echo "  ELORA_KEYSTORE_BASE64"
+            echo "  ELORA_KEYSTORE_PASSWORD"
+            echo "  ELORA_KEY_ALIAS"
+            echo "  ELORA_KEY_PASSWORD"
             echo ""
             exit 1
           fi
 
-          echo "Detected keystore type: $DETECTED_TYPE"
+          echo "Detected keystore type: $KEYSTORE_TYPE"
 
-          # Verify the requested alias exists.
+          echo "ELORA_KEYSTORE_TYPE=$KEYSTORE_TYPE" >> "$GITHUB_ENV"
+
+
+      # ============================================================
+      # 11. VERIFY KEY ALIAS
+      # ============================================================
+
+      - name: Verify signing alias
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+
+          echo "Checking signing alias..."
+
           if ! keytool \
-              -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storepass "$KEYSTORE_PASSWORD" \
-              -storetype "$DETECTED_TYPE" \
-              -alias "$KEY_ALIAS" \
-              >/dev/null 2>&1; then
+            -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -storetype "$ELORA_KEYSTORE_TYPE" \
+            -alias "$KEY_ALIAS" \
+            >/dev/null 2>&1; then
 
             echo ""
-            echo "ERROR: Alias '$KEY_ALIAS' was not found in the keystore."
+            echo "ERROR: Alias '$KEY_ALIAS' does not exist."
             echo ""
             echo "Available aliases:"
+            
             keytool \
               -list \
               -keystore "$KEYSTORE_FILE" \
               -storepass "$KEYSTORE_PASSWORD" \
-              -storetype "$DETECTED_TYPE" \
-              | sed -n '1,30p'
+              -storetype "$ELORA_KEYSTORE_TYPE" || true
 
             exit 1
           fi
 
-          echo "Alias verified: $KEY_ALIAS"
+          echo "Signing alias verified: $KEY_ALIAS"
 
-          echo "ELORA_KEYSTORE_TYPE=$DETECTED_TYPE" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # 12. SHOW CERTIFICATE FINGERPRINT
+      # ============================================================
 
       - name: Verify release certificate
         shell: bash
@@ -253,7 +427,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Release certificate information:"
+          echo "Release certificate:"
 
           keytool \
             -list \
@@ -261,12 +435,13 @@ jobs:
             -keystore "$KEYSTORE_FILE" \
             -storepass "$KEYSTORE_PASSWORD" \
             -storetype "$ELORA_KEYSTORE_TYPE" \
-            -alias "$KEY_ALIAS" \
-            | grep -E "Owner:|SHA256:"
+            -alias "$KEY_ALIAS" |
+            grep -E "Owner:|SHA256:"
 
-      # ==========================================================
-      # BUILD
-      # ==========================================================
+
+      # ============================================================
+      # 13. BUILD RELEASE APK
+      # ============================================================
 
       - name: Build release APK
         shell: bash
@@ -277,21 +452,38 @@ jobs:
 
           chmod +x gradlew
 
-          ./gradlew clean assembleRelease --no-daemon --stacktrace
+          ./gradlew \
+            clean \
+            assembleRelease \
+            --no-daemon \
+            --stacktrace
+
+          echo "Release APK build completed."
+
+
+      # ============================================================
+      # 14. FIND APK
+      # ============================================================
 
       - name: Locate unsigned APK
         shell: bash
         run: |
           set -euo pipefail
 
-          APK="$(find "$PROJECT_DIR/app/build/outputs/apk/release" \
-            -type f \
-            -name "*unsigned*.apk" \
-            -print -quit)"
+          OUTPUT_DIR="$PROJECT_DIR/app/build/outputs/apk/release"
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: Unsigned APK was not generated."
+          UNSIGNED_APK="$(
+            find "$OUTPUT_DIR" \
+              -type f \
+              -name "*unsigned*.apk" \
+              -print -quit
+          )"
 
+          if [ -z "$UNSIGNED_APK" ]; then
+            echo "ERROR: Unsigned APK was not found."
+
+            echo ""
+            echo "Generated files:"
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
               -print || true
@@ -300,20 +492,21 @@ jobs:
           fi
 
           echo "Unsigned APK:"
-          echo "$APK"
+          echo "$UNSIGNED_APK"
 
-          echo "UNSIGNED_APK=$APK" >> "$GITHUB_ENV"
+          echo "UNSIGNED_APK=$UNSIGNED_APK" >> "$GITHUB_ENV"
 
-      # ==========================================================
-      # SIGNING
-      # ==========================================================
+
+      # ============================================================
+      # 15. SIGN APK
+      # ============================================================
 
       - name: Sign release APK
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ELORA_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
         run: |
           set -euo pipefail
 
@@ -323,9 +516,6 @@ jobs:
 
           SIGNED_APK="$RUNNER_TEMP/Elora-Dashboard-1.9.13.apk"
 
-          # IMPORTANT:
-          # --ks-type is explicitly supplied.
-          # This prevents apksigner from incorrectly assuming PKCS12.
           apksigner sign \
             --ks "$KEYSTORE_FILE" \
             --ks-type "$ELORA_KEYSTORE_TYPE" \
@@ -336,13 +526,18 @@ jobs:
             "$UNSIGNED_APK"
 
           if [ ! -s "$SIGNED_APK" ]; then
-            echo "ERROR: Signed APK was not created."
+            echo "ERROR: Signed APK was not generated."
             exit 1
           fi
 
           echo "SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
 
           echo "APK signing completed successfully."
+
+
+      # ============================================================
+      # 16. VERIFY SIGNATURE
+      # ============================================================
 
       - name: Verify APK signature
         shell: bash
@@ -355,18 +550,45 @@ jobs:
             --verbose \
             "$SIGNED_APK"
 
+          echo ""
           echo "APK signature verified successfully."
 
-      # ==========================================================
-      # ARTIFACT
-      # ==========================================================
 
-      - name: Upload APK
+      # ============================================================
+      # 17. APK INFORMATION
+      # ============================================================
+
+      - name: Verify final APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=============================================="
+          echo "FINAL APK"
+          echo "=============================================="
+
+          ls -lh "$SIGNED_APK"
+
+          echo ""
+          echo "APK:"
+          echo "$SIGNED_APK"
+
+
+      # ============================================================
+      # 18. UPLOAD ARTIFACT
+      # ============================================================
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Elora-Dashboard-1.9.13
           path: ${{ env.SIGNED_APK }}
           if-no-files-found: error
+
+
+      # ============================================================
+      # 19. GITHUB RELEASE
+      # ============================================================
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
