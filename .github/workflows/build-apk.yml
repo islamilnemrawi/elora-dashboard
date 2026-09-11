@@ -11,13 +11,13 @@ permissions:
 
 jobs:
   build:
-    name: Build Elora Dashboard 1.9.13
+    name: Elora Dashboard 1.9.13
     runs-on: ubuntu-latest
 
     steps:
 
       # ============================================================
-      # 1. CHECKOUT
+      # CHECKOUT
       # ============================================================
 
       - name: Checkout repository
@@ -25,7 +25,7 @@ jobs:
 
 
       # ============================================================
-      # 2. ANDROID SDK
+      # ANDROID SDK
       # ============================================================
 
       - name: Setup Android SDK
@@ -33,7 +33,7 @@ jobs:
 
 
       # ============================================================
-      # 3. JAVA
+      # JAVA 17
       # ============================================================
 
       - name: Setup Java 17
@@ -44,7 +44,7 @@ jobs:
 
 
       # ============================================================
-      # 4. FIND PROJECT ZIP
+      # FIND PROJECT ZIP
       # ============================================================
 
       - name: Find Elora project ZIP
@@ -69,24 +69,24 @@ jobs:
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: Elora project ZIP was not found."
-            echo ""
-            echo "Available ZIP files:"
+
             find "$GITHUB_WORKSPACE" \
               -maxdepth 1 \
               -type f \
               -name "*.zip" \
               -print || true
+
             exit 1
           fi
 
-          echo "Found project ZIP:"
+          echo "Project ZIP:"
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
 
       # ============================================================
-      # 5. EXTRACT PROJECT
+      # EXTRACT PROJECT
       # ============================================================
 
       - name: Extract Elora project
@@ -119,21 +119,14 @@ jobs:
             PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
           fi
 
-          if [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
-            echo "ERROR: Invalid Android project."
-            exit 1
-          fi
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo ""
           echo "Project directory:"
           echo "$PROJECT_DIR"
-          echo ""
 
 
       # ============================================================
-      # 6. VERIFY PROJECT STRUCTURE
+      # VERIFY PROJECT
       # ============================================================
 
       - name: Verify Android project
@@ -157,11 +150,11 @@ jobs:
             fi
           done
 
-          echo "Android project structure verified."
+          echo "Android project verified."
 
 
       # ============================================================
-      # 7. VERIFY ELORA APPLICATION
+      # VERIFY ELORA VERSION
       # ============================================================
 
       - name: Verify Elora application configuration
@@ -174,24 +167,18 @@ jobs:
           GRADLE_FILE="app/build.gradle"
 
           echo "=============================================="
-          echo "Elora application configuration"
+          echo "Elora configuration"
           echo "=============================================="
 
           grep -nE \
             "applicationId|versionCode|versionName" \
             "$GRADLE_FILE" || true
 
-          echo ""
-
-          # --------------------------------------------------------
-          # applicationId
-          # Supports:
-          #
+          # applicationId:
           # applicationId 'com.elora.dashboard'
           # applicationId "com.elora.dashboard"
           # applicationId = 'com.elora.dashboard'
           # applicationId = "com.elora.dashboard"
-          # --------------------------------------------------------
 
           if ! grep -Eq \
             "^[[:space:]]*applicationId[[:space:]]*(=[[:space:]]*)?['\"]com\.elora\.dashboard['\"]" \
@@ -201,13 +188,7 @@ jobs:
             exit 1
           fi
 
-          # --------------------------------------------------------
-          # versionCode
-          # Supports:
-          #
-          # versionCode 19
-          # versionCode = 19
-          # --------------------------------------------------------
+          # versionCode 19 / versionCode = 19
 
           if ! grep -Eq \
             "^[[:space:]]*versionCode[[:space:]]*(=[[:space:]]*)?19([[:space:]]*(//.*)?)?$" \
@@ -217,15 +198,7 @@ jobs:
             exit 1
           fi
 
-          # --------------------------------------------------------
-          # versionName
-          # Supports:
-          #
-          # versionName '1.9.13'
-          # versionName "1.9.13"
-          # versionName = '1.9.13'
-          # versionName = "1.9.13"
-          # --------------------------------------------------------
+          # versionName '1.9.13' / versionName = "1.9.13"
 
           if ! grep -Eq \
             "^[[:space:]]*versionName[[:space:]]*(=[[:space:]]*)?['\"]1\.9\.13['\"]([[:space:]]*(//.*)?)?$" \
@@ -236,13 +209,11 @@ jobs:
           fi
 
           echo ""
-          echo "=============================================="
-          echo "Elora 1.9.13 configuration VERIFIED"
-          echo "=============================================="
+          echo "Elora 1.9.13 configuration VERIFIED."
 
 
       # ============================================================
-      # 8. GRADLE
+      # INSTALL GRADLE
       # ============================================================
 
       - name: Setup Gradle 8.9
@@ -252,7 +223,21 @@ jobs:
 
 
       # ============================================================
-      # 9. RESTORE SIGNING KEYSTORE
+      # VERIFY GRADLE
+      # ============================================================
+
+      - name: Verify Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gradle --version
+
+          echo "Gradle is ready."
+
+
+      # ============================================================
+      # RESTORE SIGNING KEYSTORE
       # ============================================================
 
       - name: Restore release keystore
@@ -283,8 +268,9 @@ jobs:
 
           KEYSTORE_FILE="$RUNNER_TEMP/elora-release.keystore"
 
-          # Remove whitespace from BASE64 text ONLY.
-          # The decoded binary file is NEVER modified.
+          # Clean BASE64 text only.
+          # NEVER modify the decoded binary keystore.
+
           CLEAN_B64="$(
             printf '%s' "$KEYSTORE_B64" |
             tr -d '[:space:]'
@@ -298,7 +284,7 @@ jobs:
           if ! printf '%s' "$CLEAN_B64" |
             base64 --decode > "$KEYSTORE_FILE"; then
 
-            echo "ERROR: ELORA_KEYSTORE_BASE64 is invalid Base64."
+            echo "ERROR: Invalid Base64 keystore."
             exit 1
           fi
 
@@ -312,7 +298,7 @@ jobs:
           echo "Decoded keystore size: ${KEYSTORE_SIZE} bytes"
 
           if [ "$KEYSTORE_SIZE" -lt 100 ]; then
-            echo "ERROR: Decoded keystore is suspiciously small."
+            echo "ERROR: Keystore is suspiciously small."
             exit 1
           fi
 
@@ -320,14 +306,13 @@ jobs:
 
 
       # ============================================================
-      # 10. DETECT KEYSTORE TYPE
+      # DETECT KEYSTORE TYPE
       # ============================================================
 
       - name: Detect release keystore type
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
         run: |
           set -euo pipefail
 
@@ -359,15 +344,15 @@ jobs:
             echo "ERROR: RELEASE KEYSTORE COULD NOT BE OPENED"
             echo "=================================================="
             echo ""
-            echo "The APK build is fine."
-            echo "The problem is the signing keystore/credentials."
+            echo "The APK build has not started yet."
             echo ""
-            echo "Check these GitHub Secrets:"
-            echo "  ELORA_KEYSTORE_BASE64"
-            echo "  ELORA_KEYSTORE_PASSWORD"
-            echo "  ELORA_KEY_ALIAS"
-            echo "  ELORA_KEY_PASSWORD"
+            echo "Check:"
+            echo "ELORA_KEYSTORE_BASE64"
+            echo "ELORA_KEYSTORE_PASSWORD"
+            echo "ELORA_KEY_ALIAS"
+            echo "ELORA_KEY_PASSWORD"
             echo ""
+
             exit 1
           fi
 
@@ -377,7 +362,7 @@ jobs:
 
 
       # ============================================================
-      # 11. VERIFY KEY ALIAS
+      # VERIFY ALIAS
       # ============================================================
 
       - name: Verify signing alias
@@ -388,8 +373,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Checking signing alias..."
-
           if ! keytool \
             -list \
             -keystore "$KEYSTORE_FILE" \
@@ -398,25 +381,25 @@ jobs:
             -alias "$KEY_ALIAS" \
             >/dev/null 2>&1; then
 
-            echo ""
-            echo "ERROR: Alias '$KEY_ALIAS' does not exist."
+            echo "ERROR: Alias '$KEY_ALIAS' was not found."
+
             echo ""
             echo "Available aliases:"
-            
+
             keytool \
               -list \
               -keystore "$KEYSTORE_FILE" \
               -storepass "$KEYSTORE_PASSWORD" \
-              -storetype "$ELORA_KEYSTORE_TYPE" || true
+              -storetype "$ELORA_KEYSTORE_TYPE"
 
             exit 1
           fi
 
-          echo "Signing alias verified: $KEY_ALIAS"
+          echo "Signing alias verified."
 
 
       # ============================================================
-      # 12. SHOW CERTIFICATE FINGERPRINT
+      # CERTIFICATE
       # ============================================================
 
       - name: Verify release certificate
@@ -440,7 +423,7 @@ jobs:
 
 
       # ============================================================
-      # 13. BUILD RELEASE APK
+      # BUILD APK
       # ============================================================
 
       - name: Build release APK
@@ -450,19 +433,25 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          chmod +x gradlew
+          echo "=============================================="
+          echo "Building Elora Dashboard 1.9.13"
+          echo "=============================================="
 
-          ./gradlew \
+          # The project ZIP does not contain gradlew.
+          # Use the verified Gradle 8.9 installed on the runner.
+
+          gradle \
             clean \
             assembleRelease \
             --no-daemon \
             --stacktrace
 
-          echo "Release APK build completed."
+          echo ""
+          echo "Release APK build completed successfully."
 
 
       # ============================================================
-      # 14. FIND APK
+      # LOCATE APK
       # ============================================================
 
       - name: Locate unsigned APK
@@ -483,7 +472,7 @@ jobs:
             echo "ERROR: Unsigned APK was not found."
 
             echo ""
-            echo "Generated files:"
+            echo "Generated output:"
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
               -print || true
@@ -498,7 +487,7 @@ jobs:
 
 
       # ============================================================
-      # 15. SIGN APK
+      # SIGN APK
       # ============================================================
 
       - name: Sign release APK
@@ -510,7 +499,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "=============================================="
           echo "Signing release APK..."
+          echo "=============================================="
+
           echo "Keystore type: $ELORA_KEYSTORE_TYPE"
           echo "Alias: $KEY_ALIAS"
 
@@ -536,7 +528,7 @@ jobs:
 
 
       # ============================================================
-      # 16. VERIFY SIGNATURE
+      # VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -555,27 +547,27 @@ jobs:
 
 
       # ============================================================
-      # 17. APK INFORMATION
+      # FINAL APK INFO
       # ============================================================
 
-      - name: Verify final APK
+      - name: Final APK information
         shell: bash
         run: |
           set -euo pipefail
 
           echo "=============================================="
-          echo "FINAL APK"
+          echo "ELORA DASHBOARD 1.9.13"
           echo "=============================================="
 
           ls -lh "$SIGNED_APK"
 
           echo ""
-          echo "APK:"
+          echo "Signed APK:"
           echo "$SIGNED_APK"
 
 
       # ============================================================
-      # 18. UPLOAD ARTIFACT
+      # UPLOAD APK
       # ============================================================
 
       - name: Upload APK artifact
@@ -587,7 +579,7 @@ jobs:
 
 
       # ============================================================
-      # 19. GITHUB RELEASE
+      # GITHUB RELEASE
       # ============================================================
 
       - name: Create GitHub Release
