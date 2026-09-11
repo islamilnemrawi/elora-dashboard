@@ -17,7 +17,7 @@ jobs:
     steps:
 
       # ============================================================
-      # CHECKOUT
+      # 1. CHECKOUT
       # ============================================================
 
       - name: Checkout repository
@@ -25,7 +25,7 @@ jobs:
 
 
       # ============================================================
-      # ANDROID SDK
+      # 2. ANDROID SDK
       # ============================================================
 
       - name: Setup Android SDK
@@ -33,7 +33,7 @@ jobs:
 
 
       # ============================================================
-      # JAVA 17
+      # 3. JAVA
       # ============================================================
 
       - name: Setup Java 17
@@ -44,7 +44,78 @@ jobs:
 
 
       # ============================================================
-      # FIND PROJECT ZIP
+      # 4. INSTALL REQUIRED ANDROID BUILD TOOLS
+      # ============================================================
+
+      - name: Install Android Build Tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Installing Android Build Tools..."
+
+          yes | sdkmanager --licenses >/dev/null || true
+
+          sdkmanager \
+            "platform-tools" \
+            "build-tools;35.0.0"
+
+          echo ""
+          echo "Installed Android SDK packages:"
+          sdkmanager --list_installed | grep -E \
+            "build-tools|platform-tools" || true
+
+
+      # ============================================================
+      # 5. LOCATE APKSIGNER
+      # ============================================================
+
+      - name: Configure apksigner
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APKSIGNER=""
+
+          # Prefer the requested Build Tools version.
+          if [ -x "$ANDROID_HOME/build-tools/35.0.0/apksigner" ]; then
+            APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          fi
+
+          # Fallback: use the newest installed Build Tools.
+          if [ -z "$APKSIGNER" ]; then
+            APKSIGNER="$(
+              find "$ANDROID_HOME/build-tools" \
+                -type f \
+                -name "apksigner" \
+                -perm -111 \
+                | sort -V \
+                | tail -n 1
+            )"
+          fi
+
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "ERROR: apksigner was not found."
+            echo ""
+            echo "Android Build Tools installed:"
+            find "$ANDROID_HOME/build-tools" \
+              -maxdepth 2 \
+              -type f \
+              -name "apksigner" \
+              -print || true
+            exit 1
+          fi
+
+          echo "Using apksigner:"
+          echo "$APKSIGNER"
+
+          "$APKSIGNER" version
+
+          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+
+
+      # ============================================================
+      # 6. FIND PROJECT ZIP
       # ============================================================
 
       - name: Find Elora project ZIP
@@ -79,14 +150,14 @@ jobs:
             exit 1
           fi
 
-          echo "Project ZIP:"
+          echo "Using project ZIP:"
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
 
       # ============================================================
-      # EXTRACT PROJECT
+      # 7. EXTRACT PROJECT
       # ============================================================
 
       - name: Extract Elora project
@@ -121,12 +192,13 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+          echo ""
           echo "Project directory:"
           echo "$PROJECT_DIR"
 
 
       # ============================================================
-      # VERIFY PROJECT
+      # 8. VERIFY PROJECT
       # ============================================================
 
       - name: Verify Android project
@@ -150,11 +222,11 @@ jobs:
             fi
           done
 
-          echo "Android project verified."
+          echo "Android project structure verified."
 
 
       # ============================================================
-      # VERIFY ELORA VERSION
+      # 9. VERIFY ELORA VERSION
       # ============================================================
 
       - name: Verify Elora application configuration
@@ -167,14 +239,14 @@ jobs:
           GRADLE_FILE="app/build.gradle"
 
           echo "=============================================="
-          echo "Elora configuration"
+          echo "Elora application configuration"
           echo "=============================================="
 
           grep -nE \
             "applicationId|versionCode|versionName" \
             "$GRADLE_FILE" || true
 
-          # applicationId:
+          # Supports:
           # applicationId 'com.elora.dashboard'
           # applicationId "com.elora.dashboard"
           # applicationId = 'com.elora.dashboard'
@@ -188,7 +260,9 @@ jobs:
             exit 1
           fi
 
-          # versionCode 19 / versionCode = 19
+          # Supports:
+          # versionCode 19
+          # versionCode = 19
 
           if ! grep -Eq \
             "^[[:space:]]*versionCode[[:space:]]*(=[[:space:]]*)?19([[:space:]]*(//.*)?)?$" \
@@ -198,7 +272,11 @@ jobs:
             exit 1
           fi
 
-          # versionName '1.9.13' / versionName = "1.9.13"
+          # Supports:
+          # versionName '1.9.13'
+          # versionName "1.9.13"
+          # versionName = '1.9.13'
+          # versionName = "1.9.13"
 
           if ! grep -Eq \
             "^[[:space:]]*versionName[[:space:]]*(=[[:space:]]*)?['\"]1\.9\.13['\"]([[:space:]]*(//.*)?)?$" \
@@ -213,7 +291,7 @@ jobs:
 
 
       # ============================================================
-      # INSTALL GRADLE
+      # 10. SETUP GRADLE
       # ============================================================
 
       - name: Setup Gradle 8.9
@@ -223,7 +301,7 @@ jobs:
 
 
       # ============================================================
-      # VERIFY GRADLE
+      # 11. VERIFY GRADLE
       # ============================================================
 
       - name: Verify Gradle
@@ -237,7 +315,7 @@ jobs:
 
 
       # ============================================================
-      # RESTORE SIGNING KEYSTORE
+      # 12. RESTORE RELEASE KEYSTORE
       # ============================================================
 
       - name: Restore release keystore
@@ -268,8 +346,8 @@ jobs:
 
           KEYSTORE_FILE="$RUNNER_TEMP/elora-release.keystore"
 
-          # Clean BASE64 text only.
-          # NEVER modify the decoded binary keystore.
+          # Clean Base64 text only.
+          # Never modify decoded binary data.
 
           CLEAN_B64="$(
             printf '%s' "$KEYSTORE_B64" |
@@ -306,7 +384,7 @@ jobs:
 
 
       # ============================================================
-      # DETECT KEYSTORE TYPE
+      # 13. DETECT KEYSTORE TYPE
       # ============================================================
 
       - name: Detect release keystore type
@@ -344,15 +422,6 @@ jobs:
             echo "ERROR: RELEASE KEYSTORE COULD NOT BE OPENED"
             echo "=================================================="
             echo ""
-            echo "The APK build has not started yet."
-            echo ""
-            echo "Check:"
-            echo "ELORA_KEYSTORE_BASE64"
-            echo "ELORA_KEYSTORE_PASSWORD"
-            echo "ELORA_KEY_ALIAS"
-            echo "ELORA_KEY_PASSWORD"
-            echo ""
-
             exit 1
           fi
 
@@ -362,7 +431,7 @@ jobs:
 
 
       # ============================================================
-      # VERIFY ALIAS
+      # 14. VERIFY SIGNING ALIAS
       # ============================================================
 
       - name: Verify signing alias
@@ -390,7 +459,7 @@ jobs:
               -list \
               -keystore "$KEYSTORE_FILE" \
               -storepass "$KEYSTORE_PASSWORD" \
-              -storetype "$ELORA_KEYSTORE_TYPE"
+              -storetype "$ELORA_KEYSTORE_TYPE" || true
 
             exit 1
           fi
@@ -399,7 +468,7 @@ jobs:
 
 
       # ============================================================
-      # CERTIFICATE
+      # 15. VERIFY CERTIFICATE
       # ============================================================
 
       - name: Verify release certificate
@@ -423,7 +492,7 @@ jobs:
 
 
       # ============================================================
-      # BUILD APK
+      # 16. BUILD RELEASE APK
       # ============================================================
 
       - name: Build release APK
@@ -438,7 +507,7 @@ jobs:
           echo "=============================================="
 
           # The project ZIP does not contain gradlew.
-          # Use the verified Gradle 8.9 installed on the runner.
+          # Use the verified Gradle 8.9 installed on GitHub Runner.
 
           gradle \
             clean \
@@ -451,7 +520,7 @@ jobs:
 
 
       # ============================================================
-      # LOCATE APK
+      # 17. LOCATE UNSIGNED APK
       # ============================================================
 
       - name: Locate unsigned APK
@@ -472,7 +541,7 @@ jobs:
             echo "ERROR: Unsigned APK was not found."
 
             echo ""
-            echo "Generated output:"
+            echo "Generated files:"
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
               -print || true
@@ -487,7 +556,7 @@ jobs:
 
 
       # ============================================================
-      # SIGN APK
+      # 18. SIGN RELEASE APK
       # ============================================================
 
       - name: Sign release APK
@@ -505,10 +574,11 @@ jobs:
 
           echo "Keystore type: $ELORA_KEYSTORE_TYPE"
           echo "Alias: $KEY_ALIAS"
+          echo "Apksigner: $APKSIGNER"
 
           SIGNED_APK="$RUNNER_TEMP/Elora-Dashboard-1.9.13.apk"
 
-          apksigner sign \
+          "$APKSIGNER" sign \
             --ks "$KEYSTORE_FILE" \
             --ks-type "$ELORA_KEYSTORE_TYPE" \
             --ks-key-alias "$KEY_ALIAS" \
@@ -524,11 +594,12 @@ jobs:
 
           echo "SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
 
+          echo ""
           echo "APK signing completed successfully."
 
 
       # ============================================================
-      # VERIFY APK SIGNATURE
+      # 19. VERIFY APK SIGNATURE
       # ============================================================
 
       - name: Verify APK signature
@@ -538,7 +609,7 @@ jobs:
 
           echo "Verifying APK signature..."
 
-          apksigner verify \
+          "$APKSIGNER" verify \
             --verbose \
             "$SIGNED_APK"
 
@@ -547,7 +618,7 @@ jobs:
 
 
       # ============================================================
-      # FINAL APK INFO
+      # 20. FINAL APK
       # ============================================================
 
       - name: Final APK information
@@ -567,7 +638,7 @@ jobs:
 
 
       # ============================================================
-      # UPLOAD APK
+      # 21. UPLOAD APK
       # ============================================================
 
       - name: Upload APK artifact
@@ -579,7 +650,7 @@ jobs:
 
 
       # ============================================================
-      # GITHUB RELEASE
+      # 22. GITHUB RELEASE
       # ============================================================
 
       - name: Create GitHub Release
