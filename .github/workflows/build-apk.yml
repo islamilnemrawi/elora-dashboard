@@ -18,17 +18,9 @@ jobs:
 
     steps:
 
-      # =========================================================
-      # 1. CHECKOUT
-      # =========================================================
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-
-      # =========================================================
-      # 2. JAVA 17
-      # =========================================================
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -37,25 +29,17 @@ jobs:
           java-version: '17'
 
 
-      # =========================================================
-      # 3. ANDROID SDK
-      # =========================================================
-
       - name: Prepare Android SDK
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "========================================"
-          echo "Preparing Android SDK"
-          echo "========================================"
+          echo "Preparing Android SDK..."
 
           if [[ -z "${ANDROID_HOME:-}" ]]; then
             echo "ERROR: ANDROID_HOME is not configured."
             exit 1
           fi
-
-          echo "ANDROID_HOME=$ANDROID_HOME"
 
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
@@ -70,36 +54,24 @@ jobs:
           fi
 
           if [[ -z "${SDKMANAGER:-}" || ! -x "$SDKMANAGER" ]]; then
-            echo "ERROR: sdkmanager was not found."
+            echo "ERROR: sdkmanager not found."
             exit 1
           fi
-
-          echo "sdkmanager:"
-          echo "$SDKMANAGER"
 
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo ""
-          echo "Android SDK is ready."
+          echo "Android SDK ready."
 
 
-      # =========================================================
-      # 4. GRADLE
-      # =========================================================
-
-      - name: Setup Gradle 8.9
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
           cache-disabled: true
 
-
-      # =========================================================
-      # 5. FIND ELORA PROJECT
-      # =========================================================
 
       - name: Locate Elora Android project
         shell: bash
@@ -110,47 +82,30 @@ jobs:
           echo "Locating Elora Android project"
           echo "========================================"
 
-          # -----------------------------------------------------
-          # CASE 1:
-          # Project already extracted in repository root
-          # -----------------------------------------------------
-
           if [[ \
             -f "$GITHUB_WORKSPACE/settings.gradle" &&
             -f "$GITHUB_WORKSPACE/app/build.gradle"
           ]]; then
 
-            echo "Android project found directly in repository root."
+            echo "Project found in repository root."
 
             echo "PROJECT_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
 
             exit 0
           fi
 
-
-          # -----------------------------------------------------
-          # CASE 2:
-          # Project is inside a ZIP
-          # -----------------------------------------------------
-
           ZIP_FILE=""
 
           while IFS= read -r -d '' FILE; do
 
-            echo ""
             echo "Checking ZIP:"
             echo "$FILE"
-
-            # IMPORTANT:
-            # unzip -Z1 returns clean file names without
-            # the formatting spaces produced by unzip -l.
 
             ZIP_CONTENT="$(
               unzip -Z1 "$FILE" 2>/dev/null || true
             )"
 
             if [[ -z "$ZIP_CONTENT" ]]; then
-              echo "Archive could not be inspected."
               continue
             fi
 
@@ -158,40 +113,26 @@ jobs:
             HAS_APP_GRADLE=0
 
             if echo "$ZIP_CONTENT" |
-              grep -Fxq "settings.gradle"; then
-
-              HAS_SETTINGS=1
-
-            elif echo "$ZIP_CONTENT" |
               grep -Eq '(^|/)settings\.gradle$'; then
-
               HAS_SETTINGS=1
             fi
 
             if echo "$ZIP_CONTENT" |
-              grep -Fxq "app/build.gradle"; then
-
-              HAS_APP_GRADLE=1
-
-            elif echo "$ZIP_CONTENT" |
               grep -Eq '(^|/)app/build\.gradle$'; then
-
               HAS_APP_GRADLE=1
             fi
 
-            if [[ "$HAS_SETTINGS" -eq 1 &&
-                  "$HAS_APP_GRADLE" -eq 1 ]]; then
+            if [[ \
+              "$HAS_SETTINGS" -eq 1 &&
+              "$HAS_APP_GRADLE" -eq 1
+            ]]; then
 
               ZIP_FILE="$FILE"
 
-              echo ""
-              echo "VALID ELORA PROJECT FOUND:"
-              echo "$ZIP_FILE"
+              echo "Valid Android project found."
 
               break
             fi
-
-            echo "Not an Android project archive."
 
           done < <(
             find "$GITHUB_WORKSPACE" \
@@ -201,20 +142,9 @@ jobs:
               -print0
           )
 
-
-          # -----------------------------------------------------
-          # ZIP NOT FOUND
-          # -----------------------------------------------------
-
           if [[ -z "$ZIP_FILE" ]]; then
 
-            echo ""
-            echo "========================================"
-            echo "ERROR: Elora Android project not found"
-            echo "========================================"
-
-            echo ""
-            echo "ZIP files available in repository:"
+            echo "ERROR: Elora Android project ZIP was not found."
 
             find "$GITHUB_WORKSPACE" \
               -type f \
@@ -222,40 +152,17 @@ jobs:
               ! -path "*/.git/*" \
               -print || true
 
-            echo ""
-            echo "Repository root:"
-
-            find "$GITHUB_WORKSPACE" \
-              -maxdepth 2 \
-              -type f \
-              ! -path "*/.git/*" \
-              -print \
-              | sort
-
             exit 1
           fi
-
-
-          # -----------------------------------------------------
-          # EXTRACT
-          # -----------------------------------------------------
 
           EXTRACT_DIR="$GITHUB_WORKSPACE/_elora_project"
 
           rm -rf "$EXTRACT_DIR"
-
           mkdir -p "$EXTRACT_DIR"
 
-          echo ""
           echo "Extracting project..."
-          echo "$ZIP_FILE"
 
           unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
-
-
-          # -----------------------------------------------------
-          # FIND SETTINGS.GRADLE
-          # -----------------------------------------------------
 
           SETTINGS_FILE="$(
             find "$EXTRACT_DIR" \
@@ -266,66 +173,24 @@ jobs:
           )"
 
           if [[ -z "$SETTINGS_FILE" ]]; then
-
-            echo "ERROR: settings.gradle not found after extraction."
-
+            echo "ERROR: settings.gradle not found."
             exit 1
           fi
-
 
           PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
 
-
-          # -----------------------------------------------------
-          # VERIFY APP MODULE
-          # -----------------------------------------------------
-
           if [[ ! -f "$PROJECT_DIR/app/build.gradle" ]]; then
-
             echo "ERROR: app/build.gradle not found."
-
-            echo ""
-            echo "Project contents:"
-
-            find "$PROJECT_DIR" \
-              -maxdepth 4 \
-              -type f \
-              -print \
-              | sort
-
             exit 1
           fi
 
-
-          # -----------------------------------------------------
-          # EXPORT PROJECT DIRECTORY
-          # -----------------------------------------------------
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-
-          echo ""
           echo "========================================"
-          echo "ELORA PROJECT LOCATED SUCCESSFULLY"
+          echo "ELORA PROJECT FOUND"
           echo "========================================"
-
-          echo "Project:"
           echo "$PROJECT_DIR"
 
-          echo ""
-          echo "settings.gradle:"
-          echo "$SETTINGS_FILE"
-
-          echo ""
-          echo "app/build.gradle:"
-          echo "$PROJECT_DIR/app/build.gradle"
-
-          echo "========================================"
-
-
-      # =========================================================
-      # 6. VERIFY PROJECT
-      # =========================================================
 
       - name: Verify Elora project
         shell: bash
@@ -333,10 +198,6 @@ jobs:
           set -euo pipefail
 
           cd "$PROJECT_DIR"
-
-          echo "========================================"
-          echo "Verifying Elora project"
-          echo "========================================"
 
           REQUIRED_FILES=(
             "settings.gradle"
@@ -352,10 +213,8 @@ jobs:
           for FILE in "${REQUIRED_FILES[@]}"; do
 
             if [[ ! -f "$FILE" ]]; then
-
-              echo "ERROR: Required file missing:"
+              echo "ERROR: Missing:"
               echo "$FILE"
-
               exit 1
             fi
 
@@ -363,13 +222,8 @@ jobs:
 
           done
 
-          echo ""
-          echo "Elora project verification passed."
+          echo "Project verification passed."
 
-
-      # =========================================================
-      # 7. VERIFY APPLICATION ID / VERSION
-      # =========================================================
 
       - name: Verify application version
         shell: bash
@@ -378,51 +232,24 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "========================================"
-          echo "Verifying application configuration"
-          echo "========================================"
-
-          if ! grep -Eq \
+          grep -Eq \
             "applicationId[[:space:]]+['\"]com\.elora\.dashboard['\"]" \
-            app/build.gradle; then
+            app/build.gradle
 
-            echo "ERROR: applicationId is incorrect."
-
-            exit 1
-          fi
-
-          if ! grep -Eq \
+          grep -Eq \
             "versionCode[[:space:]]+19" \
-            app/build.gradle; then
+            app/build.gradle
 
-            echo "ERROR: versionCode is not 19."
-
-            exit 1
-          fi
-
-          if ! grep -Eq \
+          grep -Eq \
             "versionName[[:space:]]+['\"]1\.9\.13['\"]" \
-            app/build.gradle; then
+            app/build.gradle
 
-            echo "ERROR: versionName is not 1.9.13."
-
-            exit 1
-          fi
-
-          echo ""
           echo "Application ID : com.elora.dashboard"
           echo "Version Code   : 19"
           echo "Version Name   : 1.9.13"
 
-          echo ""
-          echo "Application configuration verified."
 
-
-      # =========================================================
-      # 8. CHECK SIGNING SECRETS
-      # =========================================================
-
-      - name: Check release signing secrets
+      - name: Check signing secrets
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.ELORA_KEYSTORE_BASE64 }}
@@ -432,36 +259,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "========================================"
-          echo "Checking release signing configuration"
-          echo "========================================"
-
-          if [[ -z "$KEYSTORE_B64" ]]; then
-            echo "ERROR: ELORA_KEYSTORE_BASE64 is missing."
+          [[ -n "$KEYSTORE_B64" ]] || {
+            echo "ERROR: ELORA_KEYSTORE_BASE64 missing."
             exit 1
-          fi
+          }
 
-          if [[ -z "$KEYSTORE_PASSWORD" ]]; then
-            echo "ERROR: ELORA_KEYSTORE_PASSWORD is missing."
+          [[ -n "$KEYSTORE_PASSWORD" ]] || {
+            echo "ERROR: ELORA_KEYSTORE_PASSWORD missing."
             exit 1
-          fi
+          }
 
-          if [[ -z "$KEY_ALIAS" ]]; then
-            echo "ERROR: ELORA_KEY_ALIAS is missing."
+          [[ -n "$KEY_ALIAS" ]] || {
+            echo "ERROR: ELORA_KEY_ALIAS missing."
             exit 1
-          fi
+          }
 
-          if [[ -z "$KEY_PASSWORD" ]]; then
-            echo "ERROR: ELORA_KEY_PASSWORD is missing."
+          [[ -n "$KEY_PASSWORD" ]] || {
+            echo "ERROR: ELORA_KEY_PASSWORD missing."
             exit 1
-          fi
+          }
 
-          echo "All signing secrets are available."
+          echo "Signing secrets detected."
 
-
-      # =========================================================
-      # 9. RESTORE KEYSTORE
-      # =========================================================
 
       - name: Restore release keystore
         shell: bash
@@ -472,28 +291,20 @@ jobs:
 
           KEYSTORE_FILE="$RUNNER_TEMP/elora-release.keystore"
 
-          echo "Restoring release keystore..."
-
           printf '%s' "$KEYSTORE_B64" |
             base64 --decode |
             tr -d '\r\n' \
             > "$KEYSTORE_FILE"
 
           if [[ ! -s "$KEYSTORE_FILE" ]]; then
-
-            echo "ERROR: Restored keystore is empty."
-
+            echo "ERROR: Keystore is empty."
             exit 1
           fi
 
           echo "ELORA_KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
 
-          echo "Release keystore restored successfully."
+          echo "Keystore restored successfully."
 
-
-      # =========================================================
-      # 10. BUILD RELEASE
-      # =========================================================
 
       - name: Build release APK
         shell: bash
@@ -503,7 +314,7 @@ jobs:
           cd "$PROJECT_DIR"
 
           echo "========================================"
-          echo "Building Elora Dashboard v1.9.13"
+          echo "BUILDING ELORA DASHBOARD v1.9.13"
           echo "========================================"
 
           gradle \
@@ -513,38 +324,27 @@ jobs:
             --stacktrace \
             --warning-mode all
 
-          echo ""
           echo "Gradle build completed."
 
 
-      # =========================================================
-      # 11. FIND APK
-      # =========================================================
-
-      - name: Locate generated APK
+      - name: Locate unsigned release APK
         shell: bash
         run: |
           set -euo pipefail
 
           APK_DIR="$PROJECT_DIR/app/build/outputs/apk/release"
 
-          echo "Searching for generated APK..."
-
           APK_FILE="$(
             find "$APK_DIR" \
               -type f \
               -name "*.apk" \
-              ! -name "*unsigned*" \
               -print \
               | head -n 1
           )"
 
           if [[ -z "$APK_FILE" ]]; then
 
-            echo "ERROR: No release APK was generated."
-
-            echo ""
-            echo "All APK files found:"
+            echo "ERROR: No APK was generated."
 
             find "$PROJECT_DIR/app/build/outputs" \
               -type f \
@@ -556,14 +356,11 @@ jobs:
 
           echo "ELORA_APK=$APK_FILE" >> "$GITHUB_ENV"
 
-          echo ""
-          echo "Generated APK:"
+          echo "========================================"
+          echo "APK FOUND"
+          echo "========================================"
           echo "$APK_FILE"
 
-
-      # =========================================================
-      # 12. SIGN APK
-      # =========================================================
 
       - name: Sign release APK
         shell: bash
@@ -579,13 +376,11 @@ jobs:
           SIGNED_APK="$RUNNER_TEMP/Elora-Dashboard-v1.9.13.apk"
 
           if [[ ! -x "$APKSIGNER" ]]; then
-
-            echo "ERROR: apksigner was not found."
-
+            echo "ERROR: apksigner not found."
             exit 1
           fi
 
-          echo "Signing APK..."
+          echo "Signing release APK..."
 
           "$APKSIGNER" sign \
             --ks "$ELORA_KEYSTORE_FILE" \
@@ -596,22 +391,14 @@ jobs:
             "$ELORA_APK"
 
           if [[ ! -s "$SIGNED_APK" ]]; then
-
             echo "ERROR: Signed APK was not created."
-
             exit 1
           fi
 
           echo "ELORA_SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
 
-          echo ""
-          echo "APK signed successfully:"
-          echo "$SIGNED_APK"
+          echo "APK signed successfully."
 
-
-      # =========================================================
-      # 13. VERIFY SIGNATURE
-      # =========================================================
 
       - name: Verify signed APK
         shell: bash
@@ -622,7 +409,7 @@ jobs:
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
 
           echo "========================================"
-          echo "Verifying APK signature"
+          echo "VERIFYING APK SIGNATURE"
           echo "========================================"
 
           "$APKSIGNER" \
@@ -630,12 +417,11 @@ jobs:
             --verbose \
             "$ELORA_SIGNED_APK"
 
-          echo ""
-          echo "APK signature verification passed."
+          echo "Signature verification passed."
 
           echo ""
           echo "========================================"
-          echo "Verifying APK package information"
+          echo "VERIFYING APK PACKAGE"
           echo "========================================"
 
           PACKAGE_INFO="$(
@@ -647,43 +433,31 @@ jobs:
           echo "$PACKAGE_INFO" |
             grep -E "^package:"
 
-          echo ""
-
           echo "$PACKAGE_INFO" |
-            grep -q \
-              "name='com.elora.dashboard'" \
-            || {
-              echo "ERROR: Incorrect package name."
+            grep -q "name='com.elora.dashboard'" || {
+              echo "ERROR: Wrong application ID."
               exit 1
             }
 
           echo "$PACKAGE_INFO" |
-            grep -q \
-              "versionCode='19'" \
-            || {
-              echo "ERROR: Incorrect version code."
+            grep -q "versionCode='19'" || {
+              echo "ERROR: Wrong version code."
               exit 1
             }
 
           echo "$PACKAGE_INFO" |
-            grep -q \
-              "versionName='1.9.13'" \
-            || {
-              echo "ERROR: Incorrect version name."
+            grep -q "versionName='1.9.13'" || {
+              echo "ERROR: Wrong version name."
               exit 1
             }
 
           echo ""
           echo "========================================"
-          echo "APK verification PASSED"
+          echo "APK VERIFICATION PASSED"
           echo "========================================"
 
 
-      # =========================================================
-      # 14. UPLOAD APK ARTIFACT
-      # =========================================================
-
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Elora-Dashboard-v1.9.13-PRO
@@ -691,10 +465,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-
-      # =========================================================
-      # 15. CREATE GITHUB RELEASE
-      # =========================================================
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
