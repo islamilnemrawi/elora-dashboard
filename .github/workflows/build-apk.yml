@@ -1,330 +1,46 @@
-name: ELORA Dashboard - Build Signed APK
+name: Build Elora Dashboard APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-
-permissions:
-  contents: read
+    branches: ["main"]
 
 jobs:
   build:
-    name: Build Signed ELORA APK
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v6
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
+          cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Setup Gradle 8.9
-        uses: gradle/actions/setup-gradle@v6
+      - name: Install Android SDK 35
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: "8.7"
 
-      # -------------------------------------------------------
-      # Find source ZIP
-      # -------------------------------------------------------
-      - name: Find ELORA source ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
+      - name: Build Debug APK
+        run: gradle :app:assembleDebug --no-daemon
 
-          ZIP="$(find . -type f \
-            -name 'Elora_Dashboard_v1_9_11_PRO_FINAL.zip' \
-            -print -quit)"
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Elora-Dashboard.apk
 
-          if [ -z "$ZIP" ]; then
-            echo "ERROR: ELORA source ZIP not found."
-            find . -type f -name '*.zip' -print
-            exit 1
-          fi
-
-          echo "SOURCE_ZIP=$ZIP" >> "$GITHUB_ENV"
-
-      # -------------------------------------------------------
-      # Extract
-      # -------------------------------------------------------
-      - name: Extract ELORA project
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rm -rf elora-build
-          mkdir -p elora-build
-
-          unzip -q "$SOURCE_ZIP" -d elora-build
-
-      # -------------------------------------------------------
-      # Detect project
-      # -------------------------------------------------------
-      - name: Detect Android project
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SETTINGS="$(find "$GITHUB_WORKSPACE/elora-build" \
-            -type f \
-            \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
-            -print -quit)"
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle not found."
-            exit 1
-          fi
-
-          PROJECT_ROOT="$(dirname "$SETTINGS")"
-
-          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
-
-          echo "Project:"
-          echo "$PROJECT_ROOT"
-
-          test -f "$PROJECT_ROOT/app/build.gradle" || \
-            test -f "$PROJECT_ROOT/app/build.gradle.kts"
-
-      # -------------------------------------------------------
-      # Create Gradle Wrapper
-      # -------------------------------------------------------
-      - name: Create Gradle Wrapper
-        working-directory: ${{ env.PROJECT_ROOT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          gradle wrapper \
-            --gradle-version 8.9 \
-            --distribution-type bin
-
-          chmod +x gradlew
-
-          ./gradlew --version
-
-      # -------------------------------------------------------
-      # Prepare signing
-      # -------------------------------------------------------
-      - name: Prepare signing keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SIGN_DIR="$RUNNER_TEMP/elora-signing"
-
-          mkdir -p "$SIGN_DIR"
-
-          echo "${{ secrets.ELORA_KEYSTORE_BASE64 }}" \
-            | base64 --decode \
-            > "$SIGN_DIR/elora-release.keystore"
-
-          test -s "$SIGN_DIR/elora-release.keystore"
-
-          echo "KEYSTORE_FILE=$SIGN_DIR/elora-release.keystore" \
-            >> "$GITHUB_ENV"
-
-      # -------------------------------------------------------
-      # Build unsigned APK
-      # -------------------------------------------------------
-      - name: Build Release APK
-        working-directory: ${{ env.PROJECT_ROOT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ./gradlew \
-            clean \
-            :app:assembleRelease \
-            --no-daemon \
-            --stacktrace
-
-      # -------------------------------------------------------
-      # Find unsigned APK
-      # -------------------------------------------------------
-      - name: Find unsigned APK
-        working-directory: ${{ env.PROJECT_ROOT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="$(find app/build/outputs/apk/release \
-            -type f \
-            -name '*.apk' \
-            -print -quit)"
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-
-          echo "UNSIGNED_APK=$PROJECT_ROOT/$APK" \
-            >> "$GITHUB_ENV"
-
-          echo "APK:"
-          echo "$APK"
-
-      # -------------------------------------------------------
-      # Align APK before signing
-      # -------------------------------------------------------
-      - name: Zipalign APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" \
-            -type f \
-            -name zipalign \
-            | sort \
-            | tail -n 1)"
-
-          if [ -z "$ZIPALIGN" ]; then
-            echo "ERROR: zipalign not found."
-            exit 1
-          fi
-
-          mkdir -p "$GITHUB_WORKSPACE/signed-apk"
-
-          "$ZIPALIGN" \
-            -p \
-            -f \
-            4 \
-            "$UNSIGNED_APK" \
-            "$GITHUB_WORKSPACE/signed-apk/aligned.apk"
-
-          test -s "$GITHUB_WORKSPACE/signed-apk/aligned.apk"
-
-      # -------------------------------------------------------
-      # Sign APK
-      # -------------------------------------------------------
-      - name: Sign APK
-        shell: bash
-        env:
-          STORE_PASSWORD: ${{ secrets.ELORA_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ELORA_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ELORA_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" \
-            -type f \
-            -name apksigner \
-            | sort \
-            | tail -n 1)"
-
-          if [ -z "$APKSIGNER" ]; then
-            echo "ERROR: apksigner not found."
-            exit 1
-          fi
-
-          "$APKSIGNER" sign \
-            --ks "$KEYSTORE_FILE" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:$STORE_PASSWORD" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            --out "$GITHUB_WORKSPACE/signed-apk/Elora-Dashboard.apk" \
-            "$GITHUB_WORKSPACE/signed-apk/aligned.apk"
-
-          test -s "$GITHUB_WORKSPACE/signed-apk/Elora-Dashboard.apk"
-
-      # -------------------------------------------------------
-      # Verify signature
-      # -------------------------------------------------------
-      - name: Verify APK signature
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" \
-            -type f \
-            -name apksigner \
-            | sort \
-            | tail -n 1)"
-
-          "$APKSIGNER" verify \
-            --verbose \
-            "$GITHUB_WORKSPACE/signed-apk/Elora-Dashboard.apk"
-
-          echo
-          echo "======================================"
-          echo "APK SIGNATURE: VALID"
-          echo "======================================"
-
-      # -------------------------------------------------------
-      # Verify package name
-      # -------------------------------------------------------
-      - name: Verify package name
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          AAPT="$(find "$ANDROID_HOME/build-tools" \
-            -type f \
-            -name aapt \
-            | sort \
-            | tail -n 1)"
-
-          PACKAGE="$("$AAPT" dump badging \
-            "$GITHUB_WORKSPACE/signed-apk/Elora-Dashboard.apk" \
-            | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
-            | head -n 1)"
-
-          echo "Package: $PACKAGE"
-
-          if [ "$PACKAGE" != "com.elora.dashboard" ]; then
-            echo "ERROR: Wrong package name."
-            echo "Expected: com.elora.dashboard"
-            echo "Found: $PACKAGE"
-            exit 1
-          fi
-
-          echo "PACKAGE: VALID"
-
-      # -------------------------------------------------------
-      # Final APK integrity test
-      # -------------------------------------------------------
-      - name: Final APK integrity check
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="$GITHUB_WORKSPACE/signed-apk/Elora-Dashboard.apk"
-
-          test -s "$APK"
-
-          unzip -t "$APK" >/dev/null
-
-          echo
-          echo "======================================"
-          echo "ELORA DASHBOARD APK READY"
-          echo "======================================"
-
-          ls -lh "$APK"
-
-      # -------------------------------------------------------
-      # Upload ONLY signed APK
-      # -------------------------------------------------------
-      - name: Upload signed APK
-        uses: actions/upload-artifact@v5
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: ELORA-Dashboard-APK
-          path: signed-apk/Elora-Dashboard.apk
+          name: Elora-Dashboard-APK
+          path: Elora-Dashboard.apk
           if-no-files-found: error
-          retention-days: 30
-
-      # -------------------------------------------------------
-      # Cleanup
-      # -------------------------------------------------------
-      - name: Cleanup
-        if: always()
-        shell: bash
-        run: |
-          rm -rf "$RUNNER_TEMP/elora-signing"
